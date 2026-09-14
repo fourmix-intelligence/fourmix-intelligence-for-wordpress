@@ -1,0 +1,18 @@
+{
+  "name": "fourmix-intelligence/wordpress",
+  "description": "Fourmix Intelligence の公式 WordPress プラグイン",
+  "type": "wordpress-plugin",
+  "license": "GPL-2.0-or-later",
+  "require": {"php": ">=8.1"},
+  "require-dev": {
+    "dealerdirect/phpcodesniffer-composer-installer": "^1.0",
+    "phpcompatibility/phpcompatibility-wp": "^2.1",
+    "wp-coding-standards/wpcs": "^3.2"
+  },
+  "scripts": {
+    "lint": "phpcs",
+    "test": ["@lint"]
+  },
+  "config": {"allow-plugins": {"dealerdirect/phpcodesniffer-composer-installer": true}, "sort-packages": true}
+}
+

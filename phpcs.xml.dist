@@ -1,0 +1,21 @@
+<?xml version="1.0"?>
+<ruleset name="Fourmix Intelligence for WordPress">
+  <description>WordPress.org 配布向けの品質検査</description>
+  <file>fourmix-intelligence.php</file>
+  <file>uninstall.php</file>
+  <file>src</file>
+  <exclude-pattern>vendor/*</exclude-pattern>
+  <arg name="extensions" value="php"/>
+  <arg value="sp"/>
+  <rule ref="WordPress-Core">
+    <!-- 名前空間と PSR-4 を採用するため、旧来の class-*.php 命名規則だけを除外します。 -->
+    <exclude name="WordPress.Files.FileName"/>
+  </rule>
+  <rule ref="WordPress.Security"/>
+  <rule ref="PHPCompatibilityWP">
+    <include-pattern>*\.php$</include-pattern>
+  </rule>
+  <config name="testVersion" value="8.1-"/>
+  <config name="minimum_supported_wp_version" value="6.7"/>
+  <rule ref="WordPress.WP.I18n"><properties><property name="text_domain" type="array"><element value="fourmix-intelligence"/></property></properties></rule>
+</ruleset>

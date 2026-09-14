@@ -1,0 +1,6 @@
+/.github export-ignore
+/AGENTS.md export-ignore
+/composer.json export-ignore
+/composer.lock export-ignore
+/docker-compose.yml export-ignore
+/phpcs.xml.dist export-ignore
