@@ -8,7 +8,7 @@ use FourmixIntelligence\WordPress\Blocks\BlockRegistry;
 use FourmixIntelligence\WordPress\Knowledge\Synchronizer;
 use FourmixIntelligence\WordPress\Privacy\PrivacyIntegration;
 use FourmixIntelligence\WordPress\Rest\ConversationController;
-
+use FourmixIntelligence\WordPress\Rest\NativeBridgeController;
 final class Plugin {
 	private static ?self $instance = null;
 	public static function instance(): self {
@@ -20,6 +20,7 @@ final class Plugin {
 		( new SettingsPage() )->register();
 		( new BlockRegistry() )->register();
 		( new ConversationController() )->register();
+		( new NativeBridgeController() )->register();
 		( new Synchronizer() )->register();
 		( new PrivacyIntegration() )->register();
 		( new AbilityIntegration() )->register();

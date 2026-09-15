@@ -37,8 +37,16 @@ final class SettingsPage {
 
 	/** @param mixed $input @return array<string, mixed> */
 	public function sanitize( mixed $input ): array {
-		$input   = is_array( $input ) ? $input : array();
-		$current = (array) get_option( 'fourmix_intelligence_settings', array() );
+		$input         = is_array( $input ) ? $input : array();
+		$current       = (array) get_option( 'fourmix_intelligence_settings', array() );
+		$bridge_secret = (string) ( $input['bridge_secret'] ?? '' );
+		if ( '' !== $bridge_secret && strlen( $bridge_secret ) < 32 ) {
+			add_settings_error( 'fourmix_intelligence_settings', 'bridge_secret', __( 'FinCube接続共有キーは32文字以上で入力してください。', 'fourmix-intelligence' ) );
+			$bridge_secret = (string) ( $current['bridge_secret'] ?? '' );
+		}
+		if ( '' !== $bridge_secret && ! hash_equals( (string) ( $current['bridge_secret'] ?? '' ), $bridge_secret ) ) {
+			delete_option( 'fourmix_intelligence_bridge_binding' );
+		}
 		return array(
 			'url'               => esc_url_raw( (string) ( $input['url'] ?? 'https://mcp.ai.fourmix.co.jp' ) ),
 			'token'             => '' !== (string) ( $input['token'] ?? '' ) ? sanitize_text_field( (string) $input['token'] ) : (string) ( $current['token'] ?? '' ),
@@ -47,6 +55,8 @@ final class SettingsPage {
 			'sync_token'        => '' !== (string) ( $input['sync_token'] ?? '' ) ? sanitize_text_field( (string) $input['sync_token'] ) : (string) ( $current['sync_token'] ?? '' ),
 			'conversation_mode' => in_array( $input['conversation_mode'] ?? '', array( 'temporary', 'history' ), true ) ? $input['conversation_mode'] : 'history',
 			'sync_post_types'   => array_values( array_intersect( array_map( 'sanitize_key', (array) ( $input['sync_post_types'] ?? array() ) ), get_post_types( array( 'public' => true ) ) ) ),
+			'bridge_secret'     => '' !== $bridge_secret ? sanitize_text_field( $bridge_secret ) : (string) ( $current['bridge_secret'] ?? '' ),
+			'bridge_groups'     => array_values( array_intersect( array_map( 'sanitize_key', (array) ( $input['bridge_groups'] ?? array() ) ), array( 'content', 'media', 'users', 'products', 'orders', 'coupons' ) ) ),
 		);
 	}
 
@@ -76,6 +86,19 @@ final class SettingsPage {
 		foreach ( $post_types as $type ) :
 			?>
 			<label style="display:block"><input type="checkbox" name="fourmix_intelligence_settings[sync_post_types][]" value="<?php echo esc_attr( $type->name ); ?>" <?php checked( in_array( $type->name, (array) ( $options['sync_post_types'] ?? array( 'post', 'page', 'product' ) ), true ) ); ?>> <?php echo esc_html( $type->labels->name ); ?></label><?php endforeach; ?><p class="description"><?php esc_html_e( 'WooCommerceの商品在庫は索引へ同期せず、接客時に最新情報を確認します。', 'fourmix-intelligence' ); ?></p></td></tr>
+		<tr><th><label for="fmi-bridge-secret"><?php esc_html_e( 'FinCube接続共有キー', 'fourmix-intelligence' ); ?></label></th><td><input class="regular-text" id="fmi-bridge-secret" name="fourmix_intelligence_settings[bridge_secret]" type="password" minlength="32" autocomplete="new-password" placeholder="<?php echo esc_attr( empty( $options['bridge_secret'] ) ? __( '32文字以上の共有キーを入力', 'fourmix-intelligence' ) : __( '設定済み（変更する場合のみ入力）', 'fourmix-intelligence' ) ); ?>"><p class="description"><?php esc_html_e( 'Fourmix Intelligenceのワークスペース接続にも同じ共有キーを設定します。', 'fourmix-intelligence' ); ?></p></td></tr>
+		<tr><th><?php esc_html_e( 'FinCubeへ許可する業務', 'fourmix-intelligence' ); ?></th><td>
+		<?php
+		foreach ( array(
+			'content'  => '投稿・固定ページ',
+			'media'    => 'メディア',
+			'users'    => '利用者',
+			'products' => 'WooCommerce商品',
+			'orders'   => 'WooCommerce注文',
+			'coupons'  => 'WooCommerceクーポン',
+		) as $key => $label ) :
+			?>
+			<label style="display:block"><input type="checkbox" name="fourmix_intelligence_settings[bridge_groups][]" value="<?php echo esc_attr( $key ); ?>" <?php checked( in_array( $key, (array) ( $options['bridge_groups'] ?? array() ), true ) ); ?>> <?php echo esc_html( $label ); ?></label><?php endforeach; ?><p class="description"><?php esc_html_e( '選んだ業務だけが署名付きで公開され、実行時にも再確認されます。', 'fourmix-intelligence' ); ?></p></td></tr>
 		</table><?php submit_button( __( '設定を保存', 'fourmix-intelligence' ) ); ?></form></div>
 		<?php
 	}
