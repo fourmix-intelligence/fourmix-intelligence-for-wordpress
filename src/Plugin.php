@@ -9,6 +9,7 @@ use FourmixIntelligence\WordPress\Knowledge\Synchronizer;
 use FourmixIntelligence\WordPress\Privacy\PrivacyIntegration;
 use FourmixIntelligence\WordPress\Rest\ConversationController;
 use FourmixIntelligence\WordPress\Rest\NativeBridgeController;
+use FourmixIntelligence\WordPress\Support\Options;
 final class Plugin {
 	private static ?self $instance = null;
 	public static function instance(): self {
@@ -27,6 +28,10 @@ final class Plugin {
 	}
 
 	private function ensure_sync_schedule(): void {
+		if ( ! Options::get( 'sync_enabled', false ) ) {
+			wp_clear_scheduled_hook( 'fourmix_intelligence_process_sync' );
+			return;
+		}
 		if ( ! wp_next_scheduled( 'fourmix_intelligence_process_sync' ) ) {
 			wp_schedule_event( time() + 5 * MINUTE_IN_SECONDS, 'five_minutes', 'fourmix_intelligence_process_sync' );
 		}

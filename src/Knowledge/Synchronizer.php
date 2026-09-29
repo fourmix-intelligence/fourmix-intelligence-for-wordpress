@@ -12,12 +12,15 @@ final class Synchronizer {
 		add_action( 'fourmix_intelligence_process_sync', array( $this, 'process' ) );
 	}
 	public function saved( int $post_id, \WP_Post $post ): void {
-		if ( wp_is_post_revision( $post_id ) || 'publish' !== $post->post_status || ! in_array( $post->post_type, (array) Options::get( 'sync_post_types', array( 'post', 'page', 'product' ) ), true ) ) {
+		if ( ! Options::get( 'sync_enabled', false ) || wp_is_post_revision( $post_id ) || 'publish' !== $post->post_status || ! in_array( $post->post_type, (array) Options::get( 'sync_post_types', array( 'post', 'page', 'product' ) ), true ) ) {
 			return;
 		}
 		$this->enqueue( $post->post_type, $post_id, 'replace', max( 1, strtotime( $post->post_modified_gmt . ' UTC' ) ) );
 	}
 	public function deleted( int $post_id ): void {
+		if ( ! Options::get( 'sync_enabled', false ) ) {
+			return;
+		}
 		$post = get_post( $post_id );
 		if ( ! $post ) {
 			return;
@@ -35,7 +38,7 @@ final class Synchronizer {
 		}
 	}
 	public function process(): void {
-		if ( ! Options::get( 'dataset' ) || ! Options::get( 'sync_token' ) ) {
+		if ( ! Options::get( 'sync_enabled', false ) || ! Options::get( 'dataset' ) || ! Options::get( 'sync_token' ) ) {
 			return;
 		}
 		global $wpdb;

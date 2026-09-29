@@ -22,7 +22,6 @@ final class Installer {
 		) {$wpdb->get_charset_collate()};";
 		dbDelta( $sql );
 		update_option( 'fourmix_intelligence_db_version', FOURMIX_INTELLIGENCE_VERSION, false );
-		wp_schedule_single_event( time() + MINUTE_IN_SECONDS, 'fourmix_intelligence_process_sync' );
 	}
 
 	public static function deactivate(): void {
