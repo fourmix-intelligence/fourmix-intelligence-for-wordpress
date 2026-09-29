@@ -30,6 +30,8 @@ final class Synchronizer {
 		$wpdb->query( $wpdb->prepare( 'INSERT IGNORE INTO %i (object_type,object_id,operation,version,available_at,created_at) VALUES (%s,%d,%s,%d,%s,%s)', $table, $type, $id, $operation, $version, current_time( 'mysql', true ), current_time( 'mysql', true ) ) ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery
 		if ( function_exists( 'as_enqueue_async_action' ) ) {
 			as_enqueue_async_action( 'fourmix_intelligence_process_sync', array(), 'fourmix-intelligence', true );
+		} else {
+			$this->schedule( MINUTE_IN_SECONDS );
 		}
 	}
 	public function process(): void {
@@ -49,9 +51,14 @@ final class Synchronizer {
 			$placeholders = implode( ',', array_fill( 0, count( $ids ), '%d' ) );
 			$query        = $wpdb->prepare( "DELETE FROM %i WHERE id IN ({$placeholders})", array_merge( array( $table ), $ids ) ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 			$wpdb->query( $query ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery,WordPress.DB.PreparedSQL.NotPrepared -- 直前で可変個数のプレースホルダーを prepare 済みです。
+			if ( 50 === count( $rows ) ) {
+				$this->schedule( 1 );
+			}
 		} catch ( \Throwable $e ) {
+			$next_delay = HOUR_IN_SECONDS;
 			foreach ( $rows as $row ) {
-				$delay = min( HOUR_IN_SECONDS, 60 * ( 2 ** min( 5, (int) $row['attempts'] ) ) );
+				$delay      = min( HOUR_IN_SECONDS, 60 * ( 2 ** min( 5, (int) $row['attempts'] ) ) );
+				$next_delay = min( $next_delay, $delay );
 				$wpdb->update(
 					$table,
 					array(
@@ -62,6 +69,12 @@ final class Synchronizer {
 					array( '%d', '%s' ),
 					array( '%d' )
 				); }
+			$this->schedule( $next_delay );
+		}
+	}
+	private function schedule( int $delay ): void {
+		if ( ! wp_next_scheduled( 'fourmix_intelligence_process_sync' ) ) {
+			wp_schedule_single_event( time() + max( 1, $delay ), 'fourmix_intelligence_process_sync' );
 		}
 	}
 	/** @param array<string, mixed> $row @return array<string, mixed> */
