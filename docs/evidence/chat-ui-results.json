@@ -1,0 +1,42 @@
+{
+  "environment": "本機Edge・既存ローカルWordPress、Studioと操作実行の応答は合成、モデル未使用",
+  "checks": [
+    "本人トークン入力は接続後に消去",
+    "二重クリックでメッセージを増やさない",
+    "複数ターンと投稿情報の送信選択",
+    "実行を見送る操作",
+    "実行を見送ったカードは後続ターンでも復元しない",
+    "正式プレビューから明示確認と監査IDを表示",
+    "390pxで横スクロールなし",
+    "受信停止は送信結果の照会で復旧",
+    "戻る操作でも送信を再実行せず照会",
+    "再読込後は自動再送せず結果照会",
+    "未到達の送信は同じ確認情報で回復",
+    "HTMLは文字として安全に表示",
+    "結果不明は確認ボタンを無効にして状態照会のみ",
+    "AIごとの会話を分離して復元",
+    "AI選択と本人セッションの復元",
+    "新しい相談で以前の会話を切り離す",
+    "公開チャットの連続会話とトークン非公開",
+    "WordPressのDOMで公開AIだけを使用",
+    "会話確認情報はHttpOnly訪問者cookieとサーバーに保持",
+    "公開ページのデスクトップ・狭い画面・暗色表示",
+    "公開履歴を既存APIから取得",
+    "同じ訪問者の再読込で履歴復元",
+    "公開会話も受信停止後に結果を照会",
+    "公開会話で新しい相談を作成",
+    "別訪問者へ会話を表示しない",
+    "JavaScript例外なし"
+  ],
+  "screenshots": [
+    "chat-admin-desktop.png",
+    "chat-admin-narrow.png",
+    "chat-admin-dark-narrow.png",
+    "chat-admin-unknown.png",
+    "chat-public-desktop.png",
+    "chat-public-page-desktop.png",
+    "chat-public-narrow.png",
+    "chat-public-dark-narrow.png"
+  ],
+  "errors": []
+}

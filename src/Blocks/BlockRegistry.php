@@ -9,16 +9,22 @@ final class BlockRegistry {
 	public function register(): void {
 		add_action( 'init', array( $this, 'blocks' ) ); }
 	public function blocks(): void {
+		add_shortcode( 'fourmix_intelligence_chat', array( $this, 'shortcode' ) );
+		wp_register_script( 'fourmix-intelligence-chat', FOURMIX_INTELLIGENCE_URL . 'assets/chat.js', array( 'wp-i18n' ), FOURMIX_INTELLIGENCE_VERSION, true );
+		wp_set_script_translations( 'fourmix-intelligence-chat', 'fourmix-intelligence' );
+		wp_register_style( 'fourmix-intelligence-chat', FOURMIX_INTELLIGENCE_URL . 'assets/chat.css', array(), FOURMIX_INTELLIGENCE_VERSION );
 		wp_register_script( 'fourmix-intelligence-editor', FOURMIX_INTELLIGENCE_URL . 'assets/editor.js', array( 'wp-blocks', 'wp-element', 'wp-i18n', 'wp-block-editor', 'wp-components' ), FOURMIX_INTELLIGENCE_VERSION, true );
-		wp_register_script( 'fourmix-intelligence-view', FOURMIX_INTELLIGENCE_URL . 'assets/view.js', array( 'wp-i18n' ), FOURMIX_INTELLIGENCE_VERSION, true );
+		wp_register_script( 'fourmix-intelligence-view', FOURMIX_INTELLIGENCE_URL . 'assets/view.js', array( 'fourmix-intelligence-chat' ), FOURMIX_INTELLIGENCE_VERSION, true );
 		wp_set_script_translations( 'fourmix-intelligence-view', 'fourmix-intelligence' );
-		wp_register_style( 'fourmix-intelligence-blocks', FOURMIX_INTELLIGENCE_URL . 'assets/blocks.css', array(), FOURMIX_INTELLIGENCE_VERSION );
+		wp_register_style( 'fourmix-intelligence-blocks', FOURMIX_INTELLIGENCE_URL . 'assets/blocks.css', array( 'fourmix-intelligence-chat' ), FOURMIX_INTELLIGENCE_VERSION );
 		wp_localize_script(
 			'fourmix-intelligence-view',
 			'FourmixIntelligenceSettings',
 			array(
 				'endpoint'          => esc_url_raw( rest_url( 'fourmix-intelligence/v1/chat' ) ),
 				'historyEndpoint'   => esc_url_raw( rest_url( 'fourmix-intelligence/v1/history' ) ),
+				'sessionEndpoint'   => esc_url_raw( rest_url( 'fourmix-intelligence/v1/public/session' ) ),
+				'statusEndpoint'    => esc_url_raw( rest_url( 'fourmix-intelligence/v1/public/run_status' ) ),
 				'conversationMode'  => Options::get( 'conversation_mode', 'history' ),
 				'enabled'           => Options::enabled(),
 				'agent'             => Options::public_agent(),
@@ -36,6 +42,13 @@ final class BlockRegistry {
 				)
 			);
 		}
+	}
+
+	public function shortcode( array $attributes = array() ): string {
+		wp_enqueue_script( 'fourmix-intelligence-view' );
+		wp_enqueue_style( 'fourmix-intelligence-blocks' );
+		$attributes = shortcode_atts( array( 'title' => __( 'AIに相談', 'fourmix-intelligence' ) ), $attributes, 'fourmix_intelligence_chat' );
+		return sprintf( '<section class="fmi-block fmi-block--ai-concierge" data-fmi-kind="ai-concierge" data-fmi-auto="0"><div class="fmi-block__header"><h2>%s</h2></div><div class="fmi-block__body"></div></section>', esc_html( $attributes['title'] ) );
 	}
 
 	public function render( array $attributes, string $content, \WP_Block $block ): string {

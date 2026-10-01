@@ -2,21 +2,23 @@
   'use strict';
   const settings = window.FourmixIntelligenceSettings || {};
   const __ = (message) => wp.i18n.__(message, 'fourmix-intelligence');
-  const persistentKey = 'fourmix_intelligence_conversation_v2_' + (settings.agent || 'unconfigured');
-  const temporaryKey = 'fourmix_intelligence_session_v2_' + (settings.agent || 'unconfigured');
-  const storage = () => settings.conversationMode === 'history' ? window.localStorage : window.sessionStorage;
-  const storageKey = () => settings.conversationMode === 'history' ? persistentKey : temporaryKey;
-  function state() { try { return JSON.parse(storage().getItem(storageKey()) || '{}'); } catch (_) { return {}; } }
-  function save(payload) { if (payload.conversation_id && payload.customer_token) storage().setItem(storageKey(), JSON.stringify({conversation_id: payload.conversation_id, customer_token: payload.customer_token})); }
+  let visitor = null;
+  // 旧版のブラウザー内会話トークンは引き継ぎません。
+  try { localStorage.removeItem('fourmix_intelligence_conversation_v2_' + settings.agent); sessionStorage.removeItem('fourmix_intelligence_session_v2_' + settings.agent); } catch (_) {}
+  async function request(endpoint, body, signal) {
+    const response = await fetch(endpoint, {method: 'POST', credentials: 'same-origin', signal, headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body || {})});
+    const payload = await response.json();
+    if (!response.ok) throw new Error(payload.message || __('ご案内を準備できませんでした。'));
+    return payload;
+  }
+  const session = () => visitor ||= request(settings.sessionEndpoint, {});
   function context(kind) {
     const products = Array.from(document.querySelectorAll('[data-product_id], button[name="add-to-cart"]')).map((el) => Number(el.dataset.product_id || el.value || 0)).filter(Boolean).slice(0, 20);
     return {url: window.location.href.split('#')[0], title: document.title, kind, product_ids: products};
   }
   async function ask(kind, message) {
-    const response = await fetch(settings.endpoint, {method: 'POST', credentials: 'same-origin', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(Object.assign({message, context: context(kind)}, state()))});
-    const payload = await response.json();
-    if (!response.ok) throw new Error(payload.message || 'ご案内を準備できませんでした。');
-    save(payload); return payload;
+    await session();
+    return request(settings.endpoint, {message, context: context(kind), request_id: Date.now() + ':' + crypto.randomUUID()});
   }
   function cacheKey(kind) { return 'fmi_auto_' + window.btoa(unescape(encodeURIComponent(settings.agent + '|' + kind + '|' + window.location.pathname + '|' + context(kind).product_ids.join(',')))).replace(/=/g, ''); }
   function cached(kind) { try { const value = JSON.parse(sessionStorage.getItem(cacheKey(kind)) || 'null'); return value && Date.now() - value.at < 300000 ? value.payload : null; } catch (_) { return null; } }
@@ -29,7 +31,7 @@
     items.slice(0, 4).forEach((item) => {
       const card = document.createElement('article'); card.className = 'fmi-product';
       const title = document.createElement('strong'); title.textContent = item.name || item.title || '商品を見る'; card.appendChild(title);
-      if (item.price_html) { const price = document.createElement('div'); price.className = 'fmi-price'; price.innerHTML = item.price_html; card.appendChild(price); }
+      if (item.price_html) { const price = document.createElement('div'); price.className = 'fmi-price'; price.textContent = new DOMParser().parseFromString(item.price_html, 'text/html').body.textContent; card.appendChild(price); }
       if (item.reason) { const reason = document.createElement('p'); reason.textContent = item.reason; card.appendChild(reason); }
       const actions = document.createElement('div'); actions.className = 'fmi-actions';
       const link = document.createElement('a'); link.className = 'fmi-button fmi-button--secondary';
@@ -45,13 +47,21 @@
     });
     node.appendChild(grid);
   }
-  function renderResult(body, payload) { body.innerHTML = ''; text(body, payload.result && payload.result.answer || ''); cards(body, payload.result && payload.result.data); }
-  function form(block, body, kind) {
-    const form = document.createElement('form'); form.className = 'fmi-form';
-    const input = document.createElement('input'); input.type = 'text'; input.required = true; input.maxLength = 5000; input.placeholder = kind === 'site-search' ? '知りたいことを入力' : 'ご相談内容を入力';
-    const button = document.createElement('button'); button.type = 'submit'; button.textContent = 'AIに相談'; form.append(input, button);
-    form.addEventListener('submit', async (event) => { event.preventDefault(); button.disabled = true; body.innerHTML = '<p class="fmi-loading">ご案内を準備しています…</p>'; try { renderResult(body, await ask(kind, input.value)); } catch (error) { body.innerHTML = ''; text(body, error.message); } finally { button.disabled = false; } });
-    block.appendChild(form);
+  function renderResult(body, payload) { body.replaceChildren(); text(body, payload.result && payload.result.answer || ''); cards(body, payload.result && payload.result.data); }
+  async function form(block, body, kind) {
+    text(body, __('相談を準備しています…'));
+    try {
+      const data = await session();
+      window.FourmixIntelligenceChat.mount(body, {
+        scope: data.scope + ':' + kind, label: __('AI案内'), ttl: 86400000,
+        welcome: __('このサイトの内容についてご相談ください。サイトの管理者が設定した公開AIがご案内します。'),
+        request: (action, payload, signal) => request(action === 'chat' ? settings.endpoint : settings.statusEndpoint, payload, signal),
+        context: () => ({context: context(kind)}),
+        contextLabel: () => __('公開ページのURL・タイトルを参考情報として送信します'),
+        history: settings.conversationMode === 'history' ? (id) => request(settings.historyEndpoint, {conversation_id: id}) : null,
+        decorate: cards
+      });
+    } catch (error) { body.replaceChildren(); text(body, error.message); }
   }
   document.querySelectorAll('[data-fmi-kind]').forEach((block) => {
     const kind = block.dataset.fmiKind; const body = block.querySelector('.fmi-block__body');

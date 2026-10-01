@@ -1,0 +1,77 @@
+<?php
+
+// tests/chat-ui-fixture.php prepare の直後、既存のローカルWordPressで実行します。
+if ( ! defined( 'WP_CLI' ) || ! WP_CLI || ! get_option( 'fmi_chat_ui_fixture' ) ) { throw new RuntimeException( 'ローカル合成検証の準備が必要です。' ); }
+$fixture = get_option( 'fmi_chat_ui_fixture' );
+$actor = get_current_user_id(); $_SERVER['REMOTE_ADDR'] = '127.0.0.23';
+wp_set_current_user( $fixture['actor'] );
+$count = 0;
+$check = static function ( $condition, $label ) use ( &$count ) { ++$count; if ( ! $condition ) { throw new RuntimeException( '検証失敗: ' . $label ); } };
+$request = static function ( $path, $body ) {
+	$r = new WP_REST_Request( 'POST', '/fourmix-intelligence/v1/' . $path ); $r->set_header( 'Content-Type', 'application/json' ); $r->set_header( 'X-WP-Nonce', wp_create_nonce( 'wp_rest' ) ); $r->set_header( 'Origin', home_url() ); $r->set_body( wp_json_encode( $body ) ); return rest_do_request( $r );
+};
+$key = static fn() => (string) ( time() * 1000 ) . ':' . wp_generate_uuid4();
+try {
+	$check( 200 === $request( 'staff/connect', array( 'token' => 'synthetic-private-contract-token' ) )->get_status(), '本人接続' );
+	$check( 200 === $request( 'staff/select', array( 'agent' => 'synthetic-internal' ) )->get_status(), 'AI選択' );
+	$check( 'synthetic-internal' === $request( 'staff/catalog', array( 'post_id' => $fixture['posts']['draft'] ) )->get_data()['selected_agent'], 'AI選択を復元' );
+	$session = $request( 'staff/session', array( 'agent' => 'synthetic-internal' ) )->get_data();
+	$base = array( 'agent' => 'synthetic-internal', 'thread_id' => $session['thread_id'], 'request_id' => $key(), 'message' => '合成契約一回目' . wp_generate_uuid4(), 'post_id' => $fixture['posts']['draft'], 'include_context' => false );
+	$first = $request( 'staff/chat', $base )->get_data();
+	$check( isset( $first['result']['answer'] ), '実RESTで応答' );
+	$check( ! isset( get_option( 'fmi_chat_ui_fixture' )['last_body']['options']['native_context']['record'] ), '投稿情報は既定で送らない' );
+	$again = $request( 'staff/chat', $base )->get_data();
+	$check( $again === $first, '同じ送信を再実行せず応答を復元' );
+	$check( 1 === get_option( 'fmi_chat_ui_fixture' )['calls'][ hash( 'sha256', get_option( 'fmi_chat_ui_fixture' )['last_body']['messages'][0]['content'] ) ], '外部run呼び出しは一回' );
+	$check( 502 === $request( 'staff/chat', array_merge( $base, array( 'message' => '変更した送信' ) ) )->get_status(), '同じ確認情報で内容を変更できない' );
+	$check( 'succeeded' === $request( 'staff/run_status', $base )->get_data()['state'], '通信断後に結果を取得' );
+	$second = array_merge( $base, array( 'request_id' => $key(), 'message' => '合成契約二回目', 'include_context' => true ) );
+	$request( 'staff/chat', $second ); $body = get_option( 'fmi_chat_ui_fixture' )['last_body'];
+	$check( $first['conversation_id'] === $body['conversation_id'], '複数ターンで同じ会話' );
+	$check( $fixture['posts']['draft'] === $body['options']['native_context']['record']['id'], '勾選時だけ自分の投稿情報' );
+	$check( ! isset( $body['options']['native_context']['record']['content'] ), '本文は送らない' );
+	$tool = $request( 'staff/chat', array_merge( $base, array( 'request_id' => $key(), 'message' => '合成操作契約' ) ) )->get_data();
+	$id = $tool['result']['data']['tool_result']['id']; $action = array( 'agent' => 'synthetic-internal', 'thread_id' => $session['thread_id'], 'id' => $id );
+	$check( 'confirmation_required' === $request( 'staff/action', $action )->get_data()['status'], '会話に紐づく正式プレビュー' );
+	$check( true === $request( 'staff/action', $action )->get_data()['can_confirm'], 'WordPress本人の投稿編集権限も確認' );
+	$state = get_option( 'fmi_chat_ui_fixture' ); $state['actions'][ $id ]['arguments']['status'] = 'publish'; update_option( 'fmi_chat_ui_fixture', $state, false );
+	$check( false === $request( 'staff/action', $action )->get_data()['can_confirm'], '投稿者に公開権限がなければ確認不可' );
+	$check( 403 === $request( 'staff/confirm_action', $action + array( 'approved' => true ) )->get_status(), '本人の公開権限なしでは中央確認POSTを実行しない' );
+	$state = get_option( 'fmi_chat_ui_fixture' ); unset( $state['actions'][ $id ]['arguments']['status'] ); update_option( 'fmi_chat_ui_fixture', $state, false );
+	$check( 403 === $request( 'staff/action', array_merge( $action, array( 'id' => wp_generate_uuid4() ) ) )->get_status(), '任意の操作IDを拒否' );
+	$check( 403 === $request( 'staff/confirm_action', $action )->get_status(), '明示承認なしを拒否' );
+	$check( 'completed' === $request( 'staff/confirm_action', $action + array( 'approved' => true ) )->get_data()['status'], '明示承認後の結果' );
+	$request( 'staff/confirm_action', $action + array( 'approved' => true ) );
+	$check( 1 === get_option( 'fmi_chat_ui_fixture' )['actions'][ $id ]['posts'], '確認二重クリックでも実行は一回' );
+	$unknown = $request( 'staff/chat', array_merge( $base, array( 'request_id' => $key(), 'message' => '合成不明操作契約' ) ) )->get_data();
+	$unknown_id = $unknown['result']['data']['tool_result']['id']; $unknown_action = array_merge( $action, array( 'id' => $unknown_id, 'approved' => true ) );
+	$check( 'unknown_effect' === $request( 'staff/confirm_action', $unknown_action )->get_data()['status'], '確認通信断は結果不明' );
+	$request( 'staff/confirm_action', $unknown_action );
+	$check( 1 === get_option( 'fmi_chat_ui_fixture' )['actions'][ $unknown_id ]['posts'], '結果不明の更新は再送しない' );
+	$state = get_option( 'fmi_chat_ui_fixture' ); $state['actions'][ $unknown_id ]['status'] = 'confirmation_required'; update_option( 'fmi_chat_ui_fixture', $state, false );
+	$check( 'unknown_effect' === $request( 'staff/action', array_merge( $action, array( 'id' => $unknown_id ) ) )->get_data()['status'], '再読込で不明な確認を再び有効にしない' );
+	$fresh = $request( 'staff/new_conversation', array( 'agent' => 'synthetic-internal' ) )->get_data();
+	$check( $session['thread_id'] !== $fresh['thread_id'], '新しい会話の世代を更新' );
+	$check( 502 === $request( 'staff/chat', array_merge( $base, array( 'request_id' => $key() ) ) )->get_status(), '旧画面からの送信を拒否' );
+	$check( 403 === $request( 'staff/action', $action )->get_status(), '旧会話の操作を拒否' );
+	$state = get_option( 'fmi_chat_ui_fixture' ); $state['revoked'] = true; update_option( 'fmi_chat_ui_fixture', $state, false );
+	$check( 403 === $request( 'staff/session', array( 'agent' => 'synthetic-internal' ) )->get_status(), 'Studioで撤回されたAIを拒否' );
+	$state['revoked'] = false; update_option( 'fmi_chat_ui_fixture', $state, false );
+	wp_set_current_user( 0 );
+	$check( in_array( $request( 'staff/session', array( 'agent' => 'synthetic-internal' ) )->get_status(), array( 401, 403 ), true ), '匿名で社内チャットへ入れない' );
+	$visitor = $request( 'public/session', array() )->get_data();
+	$public = array( 'message' => '合成公開契約', 'request_id' => $key(), 'context' => array( 'kind' => 'ai-concierge' ), 'agent' => 'synthetic-internal' );
+	$answer = $request( 'chat', $public )->get_data();
+	$check( isset( $answer['conversation_id'] ) && ! isset( $answer['customer_token'] ), '会話専用トークンをブラウザーへ渡さない' );
+	$check( $answer === $request( 'chat', $public )->get_data(), '公開送信の重複防止' );
+	$check( isset( $request( 'history', array( 'conversation_id' => $answer['conversation_id'] ) )->get_data()['messages'] ), '同じ訪問者の履歴' );
+	$_COOKIE['fourmix_intelligence_visitor'] = str_repeat( 'b', 64 );
+	$check( $visitor['scope'] !== $request( 'public/session', array() )->get_data()['scope'], '訪問者ごとに異なる会話境界' );
+	$check( 502 === $request( 'history', array( 'conversation_id' => $answer['conversation_id'], 'customer_token' => str_repeat( 'a', 64 ) ) )->get_status(), '別の訪問者のトークン持込みを拒否' );
+	$check( 'not_started' === $request( 'public/run_status', $public )->get_data()['state'], '別の訪問者の実行記録を取得しない' );
+	$check( 502 === $request( 'chat', $public + array( 'conversation_id' => $answer['conversation_id'] ) )->get_status(), '別の訪問者の会話を継続しない' );
+	$state = get_option( 'fmi_chat_ui_fixture' ); $state['public_internal'] = true; update_option( 'fmi_chat_ui_fixture', $state, false );
+	$check( 403 === $request( 'public/session', array() )->get_status(), '社内AIの公開設定を拒否' );
+	$state['public_internal'] = false; update_option( 'fmi_chat_ui_fixture', $state, false );
+	WP_CLI::success( 'チャット契約: ' . $count . ' 件成功。REST・権限・会話境界・実行記録は実WordPress、Studio応答は合成です。' );
+} finally { wp_set_current_user( $actor ); }

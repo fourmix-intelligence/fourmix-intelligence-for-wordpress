@@ -103,10 +103,13 @@ try {
 	$public_request = new WP_REST_Request( 'POST', '/fourmix-intelligence/v1/chat' );
 	$public_request->set_header( 'origin', home_url() );
 	$public_request->set_param( 'message', '合成検証' );
+	$public_key = ( time() * 1000 ) . ':' . wp_generate_uuid4();
+	$public_request->set_param( 'request_id', $public_key );
 	$public = new FourmixIntelligence\WordPress\Rest\ConversationController();
 	native_check( 502 === $public->chat( $public_request )->get_status() && 0 === $model_calls, '社内向けAIの匿名実行をモデル呼び出し前に拒否' );
 	$audience = 'customer';
 	$reply = $public->chat( $public_request );
+	$cleanup[] = 'fmi_execution_' . hash( 'sha256', FourmixIntelligence\WordPress\Support\ChatSession::visitor() . ':' . $public_key );
 	native_check( 200 === $reply->get_status() && array() === $reply->get_data()['result']['data']['items'], 'お客様向け結果から下書きカードを除外' );
 	$synchronizer = new FourmixIntelligence\WordPress\Knowledge\Synchronizer();
 	$record_method = new ReflectionMethod( $synchronizer, 'record' );
@@ -128,7 +131,7 @@ try {
 	update_option( 'fourmix_intelligence_settings', $original, false );
 	if ( false === $original_binding ) { delete_option( 'fourmix_intelligence_bridge_binding' ); } else { update_option( 'fourmix_intelligence_bridge_binding', $original_binding, false ); }
 	foreach ( $posts as $post_id ) { wp_delete_post( $post_id, true ); }
-	foreach ( $cleanup as $option ) { delete_option( $option ); wp_clear_scheduled_hook( 'fourmix_intelligence_cleanup_nonce', array( $option ) ); }
+	foreach ( $cleanup as $option ) { delete_option( $option ); wp_clear_scheduled_hook( 'fourmix_intelligence_cleanup_nonce', array( $option ) ); if ( str_starts_with( $option, 'fmi_execution_' ) ) { wp_clear_scheduled_hook( 'fourmix_intelligence_chat_receipt_expired', array( substr( $option, 14 ) ) ); } }
 	wp_delete_user( $owner );
 	wp_delete_user( $other );
 }

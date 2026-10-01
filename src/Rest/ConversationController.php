@@ -3,6 +3,7 @@
 namespace FourmixIntelligence\WordPress\Rest;
 
 use FourmixIntelligence\WordPress\Http\Client;
+use FourmixIntelligence\WordPress\Support\ChatSession;
 use FourmixIntelligence\WordPress\Support\Options;
 use FourmixIntelligence\WordPress\Support\PublicRequestGuard;
 use WP_REST_Request;
@@ -12,6 +13,17 @@ final class ConversationController {
 	public function register(): void {
 		add_action( 'rest_api_init', array( $this, 'routes' ) ); }
 	public function routes(): void {
+		foreach ( array( 'session', 'run_status' ) as $action ) {
+			register_rest_route(
+				'fourmix-intelligence/v1',
+				'/public/' . $action,
+				array(
+					'methods'             => 'POST',
+					'callback'            => array( $this, $action ),
+					'permission_callback' => '__return_true',
+				)
+			);
+		}
 		register_rest_route(
 			'fourmix-intelligence/v1',
 			'/chat',
@@ -53,19 +65,79 @@ final class ConversationController {
 				'page'    => $this->context( $request ),
 			),
 		);
-		$this->continue_conversation( $request, $body );
 		try {
 			$this->require_customer_agent();
-			$response = ( new Client() )->post( '/api/v3/ai/plugins/' . Options::get( 'agent' ) . '/runs', $body );
+			$scope = ChatSession::visitor();
+			$key   = ChatSession::key( (string) $request->get_param( 'request_id' ) );
+			$this->continue_conversation( $request, $body, $scope );
+			$response = ChatSession::run(
+				$scope,
+				$key,
+				array(
+					'operation' => 'customer.chat',
+					'body'      => $body,
+				),
+				function () use ( $body, $scope ) {
+					$response = ( new Client() )->post( '/api/v3/ai/plugins/' . Options::public_agent() . '/runs', $body );
+					$id       = (string) ( $response['conversation_id'] ?? '' );
+					$secret   = (string) ( $response['customer_token'] ?? '' );
+					if ( preg_match( '/^[a-f0-9-]{36}$/iD', $id ) && preg_match( '/^[a-f0-9]{64}$/D', $secret ) ) {
+						$history = 'history' === Options::get( 'conversation_mode', 'history' );
+						$ttl     = $history ? 30 * DAY_IN_SECONDS : DAY_IN_SECONDS;
+						set_transient( 'fmi_customer_' . hash( 'sha256', $scope . ':' . $id ), $secret, $ttl );
+					}
+					unset( $response['customer_token'], $response['conversation_token'] );
+					return $response;
+				}
+			);
 			$kind     = $body['options']['page']['kind'];
 			if ( in_array( $kind, array( 'product-recommendation', 'frequently-bought-together', 'cart-assistant' ), true ) ) {
 				$this->hydrate_products( $response );
 			} else {
 				$this->hydrate_content( $response );
 			}
-			return new WP_REST_Response( $response, 200 );
+			return $this->reply( $response );
 		} catch ( \Throwable $e ) {
 			return new WP_REST_Response( array( 'message' => 'ただいまご案内を準備できません。時間をおいてお試しください。' ), 502 ); }
+	}
+
+	public function session( WP_REST_Request $request ): WP_REST_Response {
+		$denied = $this->access_error( $request );
+		if ( $denied ) {
+			return $denied;
+		}
+		try {
+			$this->require_customer_agent();
+			return $this->reply(
+				array(
+					'scope' => ChatSession::visitor(),
+					'agent' => Options::public_agent(),
+				)
+			);
+		} catch ( \Throwable $error ) {
+			return $this->reply( array( 'message' => __( '現在、このAI案内は準備中です。', 'fourmix-intelligence' ) ), 403 );
+		}
+	}
+
+	public function run_status( WP_REST_Request $request ): WP_REST_Response {
+		$denied = $this->access_error( $request );
+		if ( $denied ) {
+			return $denied;
+		}
+		try {
+			$this->require_customer_agent();
+			$response = ChatSession::status( ChatSession::visitor(), (string) $request->get_param( 'request_id' ) );
+			if ( isset( $response['response'] ) ) {
+				$this->hydrate( $response['response'] );
+			}
+			return $this->reply( $response );
+		} catch ( \Throwable $error ) {
+			return $this->reply( array( 'message' => __( '送信結果を確認できませんでした。', 'fourmix-intelligence' ) ), 403 );
+		}
+	}
+
+	private function reply( array $data, int $status = 200 ): WP_REST_Response {
+		return new WP_REST_Response( $data, $status, array( 'Cache-Control' => 'private, no-store' ) );
 	}
 
 	public function history( WP_REST_Request $request ): WP_REST_Response {
@@ -76,17 +148,33 @@ final class ConversationController {
 		if ( null !== $denied ) {
 			return $denied;
 		}
-		$body = array(
-			'conversation_id' => sanitize_text_field( (string) $request->get_param( 'conversation_id' ) ),
-			'customer_token'  => sanitize_text_field( (string) $request->get_param( 'customer_token' ) ),
-		);
+		$body = array();
 		if ( $request->get_param( 'before_id' ) ) {
 			$body['before_id'] = absint( $request->get_param( 'before_id' ) );
 		}
 		try {
 			$this->require_customer_agent();
-			return new WP_REST_Response( ( new Client() )->post( '/api/v3/ai/plugins/' . Options::get( 'agent' ) . '/customer-history', $body ), 200 ); } catch ( \Throwable $e ) {
+			$this->continue_conversation( $request, $body, ChatSession::visitor() );
+			if ( empty( $body['conversation_id'] ) ) {
+				throw new \RuntimeException( 'missing_conversation' );
+			}
+			$response = ( new Client() )->post( '/api/v3/ai/plugins/' . Options::public_agent() . '/customer-history', $body );
+			foreach ( (array) ( $response['messages'] ?? array() ) as $index => $message ) {
+				$payload = array( 'result' => array( 'data' => $message['data'] ?? array() ) );
+				$this->hydrate( $payload );
+				$response['messages'][ $index ]['data'] = $payload['result']['data'];
+			}
+			return $this->reply( $response ); } catch ( \Throwable $e ) {
 			return new WP_REST_Response( array( 'message' => '会話履歴を読み込めませんでした。' ), 502 ); }
+	}
+
+	private function hydrate( array &$response ): void {
+		$items = (array) ( $response['result']['data']['items'] ?? array() );
+		if ( isset( $items[0]['product_id'] ) || isset( $items[0]['sku'] ) ) {
+			$this->hydrate_products( $response );
+		} else {
+			$this->hydrate_content( $response );
+		}
 	}
 
 	private function require_customer_agent(): void {
@@ -127,10 +215,16 @@ final class ConversationController {
 		return true;
 	}
 	/** @param array<string, mixed> $body */
-	private function continue_conversation( WP_REST_Request $request, array &$body ): void {
-		$id    = sanitize_text_field( (string) $request->get_param( 'conversation_id' ) );
-		$token = sanitize_text_field( (string) $request->get_param( 'customer_token' ) );
-		if ( $id && preg_match( '/^[a-f0-9]{64}$/', $token ) ) {
+	private function continue_conversation( WP_REST_Request $request, array &$body, string $scope ): void {
+		$id = sanitize_text_field( (string) $request->get_param( 'conversation_id' ) );
+		if ( ! $id ) {
+			return;
+		}
+		$token = get_transient( 'fmi_customer_' . hash( 'sha256', $scope . ':' . $id ) );
+		if ( ! preg_match( '/^[a-f0-9-]{36}$/iD', $id ) || ! is_string( $token ) || ! preg_match( '/^[a-f0-9]{64}$/D', $token ) ) {
+			throw new \RuntimeException( esc_html__( 'この訪問者の会話を確認できません。新しい相談を始めてください。', 'fourmix-intelligence' ) );
+		}
+		if ( $id ) {
 			$body['conversation_id'] = $id;
 			$body['customer_token']  = $token; }
 	}
@@ -151,7 +245,13 @@ final class ConversationController {
 
 	/** @param array<string, mixed> $response */
 	private function hydrate_products( array &$response ): void {
-		if ( ! function_exists( 'wc_get_product' ) || ! isset( $response['result']['data']['items'] ) || ! is_array( $response['result']['data']['items'] ) ) {
+		if ( ! function_exists( 'wc_get_product' ) ) {
+			if ( isset( $response['result']['data']['items'] ) ) {
+				$response['result']['data']['items'] = array();
+			}
+			return;
+		}
+		if ( ! isset( $response['result']['data']['items'] ) || ! is_array( $response['result']['data']['items'] ) ) {
 			return;
 		}
 		$verified = array();

@@ -3,6 +3,7 @@
 namespace FourmixIntelligence\WordPress\Rest;
 
 use FourmixIntelligence\WordPress\Http\Client;
+use FourmixIntelligence\WordPress\Support\ChatSession;
 use FourmixIntelligence\WordPress\Support\ExecutionJournal;
 use FourmixIntelligence\WordPress\Support\Options;
 use WP_REST_Request;
@@ -15,7 +16,7 @@ final class StaffController {
 	}
 
 	public function routes(): void {
-		foreach ( array( 'connect', 'catalog', 'select', 'chat', 'preview', 'confirm' ) as $action ) {
+		foreach ( array( 'connect', 'catalog', 'select', 'chat', 'session', 'run_status', 'new_conversation', 'action', 'confirm_action', 'preview', 'confirm' ) as $action ) {
 			register_rest_route(
 				'fourmix-intelligence/v1',
 				'/staff/' . $action,
@@ -110,7 +111,7 @@ final class StaffController {
 		}
 	}
 
-	public function catalog(): WP_REST_Response {
+	public function catalog( WP_REST_Request $request ): WP_REST_Response {
 		$selection = array(
 			'agents'         => array(),
 			'selected_agent' => '',
@@ -122,6 +123,7 @@ final class StaffController {
 		}
 		return $this->reply(
 			$selection + array(
+				'context'      => $this->record_context( absint( $request->get_param( 'post_id' ) ) ),
 				'operations'   => ( new NativeBridgeController() )->capabilities(),
 				'woocommerce'  => class_exists( 'WooCommerce' ),
 				'appointments' => class_exists( 'WC_Bookings' ) ? 'detected_not_enabled' : 'not_detected',
@@ -129,13 +131,74 @@ final class StaffController {
 		);
 	}
 
+	private function identity( WP_REST_Request $request ): array {
+		$token = $this->token();
+		$agent = sanitize_key( (string) $request->get_param( 'agent' ) );
+		if ( ! in_array( $agent, wp_list_pluck( ( new Client() )->catalog( 'internal', $token ), 'name' ), true ) ) {
+			throw new \RuntimeException( esc_html__( 'このAIの利用権限を確認できません。接続と選択を確認してください。', 'fourmix-intelligence' ) );
+		}
+		return array( $token, $agent, $this->session_key() . '_' . hash( 'sha256', $token . ':' . $agent ) );
+	}
+
+	private function record_context( int $id ): ?array {
+		$post = $id ? get_post( $id ) : null;
+		if ( ! $post || ! in_array( $post->post_type, array( 'post', 'page' ), true ) || ! current_user_can( 'edit_post', $id ) ) {
+			return null;
+		}
+		return array(
+			'id'     => $post->ID,
+			'type'   => $post->post_type,
+			'title'  => $post->post_title,
+			'status' => $post->post_status,
+		);
+	}
+
+	public function session( WP_REST_Request $request ): WP_REST_Response {
+		try {
+			list( , , $scope ) = $this->identity( $request );
+			$state             = (array) get_transient( $scope );
+			if ( empty( $state['thread_id'] ) ) {
+				$state = array( 'thread_id' => wp_generate_uuid4() );
+				set_transient( $scope, $state, 15 * MINUTE_IN_SECONDS );
+			}
+			return $this->reply(
+				array(
+					'scope'     => hash( 'sha256', $scope ),
+					'thread_id' => $state['thread_id'],
+				)
+			);
+		} catch ( \Throwable $error ) {
+			return $this->error( $error, 403 );
+		}
+	}
+
+	public function new_conversation( WP_REST_Request $request ): WP_REST_Response {
+		try {
+			list( , , $scope ) = $this->identity( $request );
+			$state             = array( 'thread_id' => wp_generate_uuid4() );
+			set_transient( $scope, $state, 15 * MINUTE_IN_SECONDS );
+			return $this->reply( $state );
+		} catch ( \Throwable $error ) {
+			return $this->error( $error, 403 );
+		}
+	}
+
+	public function run_status( WP_REST_Request $request ): WP_REST_Response {
+		try {
+			list( , , $scope ) = $this->identity( $request );
+			return $this->reply( ChatSession::status( $scope, (string) $request->get_param( 'request_id' ) ) );
+		} catch ( \Throwable $error ) {
+			return $this->error( $error, 403 );
+		}
+	}
+
 	public function chat( WP_REST_Request $request ): WP_REST_Response {
 		try {
-			$token = $this->token();
-			$agent = sanitize_key( (string) $request->get_param( 'agent' ) );
-			$list  = ( new Client() )->catalog( 'internal', $token );
-			if ( ! in_array( $agent, wp_list_pluck( $list, 'name' ), true ) ) {
-				throw new \RuntimeException( esc_html__( '利用できる社内向けAIを選択してください。', 'fourmix-intelligence' ) );
+			list( $token, $agent, $scope ) = $this->identity( $request );
+			$key                           = ChatSession::key( (string) $request->get_param( 'request_id' ) );
+			$state                         = (array) get_transient( $scope );
+			if ( empty( $state['thread_id'] ) || ! hash_equals( $state['thread_id'], (string) $request->get_param( 'thread_id' ) ) ) {
+				throw new \RuntimeException( esc_html__( '会話が切り替わっています。画面を開き直してください。', 'fourmix-intelligence' ) );
 			}
 			update_user_meta( get_current_user_id(), 'fourmix_intelligence_internal_agent', $agent );
 			$message = sanitize_textarea_field( (string) $request->get_param( 'message' ) );
@@ -148,19 +211,14 @@ final class StaffController {
 				'actor'   => get_current_user_id(),
 			);
 			$post_id = absint( $request->get_param( 'post_id' ) );
-			if ( $post_id ) {
-				if ( ! current_user_can( 'edit_post', $post_id ) ) {
+			if ( true === $request->get_param( 'include_context' ) ) {
+				$record = $this->record_context( $post_id );
+				if ( ! $record ) {
 					throw new \RuntimeException( esc_html__( 'この投稿を参照できません。', 'fourmix-intelligence' ) );
 				}
-				$post              = get_post( $post_id );
-				$context['record'] = array(
-					'id'     => $post->ID,
-					'type'   => $post->post_type,
-					'title'  => $post->post_title,
-					'status' => $post->post_status,
-				);
+				$context['record'] = $record;
 			}
-			$body             = array(
+			$body            = array(
 				'messages' => array(
 					array(
 						'role'    => 'user',
@@ -169,18 +227,116 @@ final class StaffController {
 				),
 				'options'  => array( 'native_context' => $context ),
 			);
-			$conversation_key = $this->session_key() . '_' . hash( 'sha256', $token . ':' . $agent );
-			$conversation_id  = get_transient( $conversation_key );
+			$conversation_id = $state['conversation_id'] ?? '';
 			if ( is_string( $conversation_id ) && preg_match( '/^[0-9a-f-]{36}$/i', $conversation_id ) ) {
 				$body['conversation_id'] = $conversation_id;
 			}
-			$response = ( new Client() )->request( 'POST', '/api/v3/ai/plugins/' . rawurlencode( $agent ) . '/runs', $body, $token );
-			if ( ! empty( $response['conversation_id'] ) ) {
-				set_transient( $conversation_key, $response['conversation_id'], 15 * MINUTE_IN_SECONDS );
-			}
+			$response = ChatSession::run(
+				$scope,
+				$key,
+				array(
+					'operation' => 'chat',
+					'thread_id' => $state['thread_id'],
+					'message'   => $message,
+					'context'   => $context,
+				),
+				function () use ( $body, $token, $agent, $scope, $state ) {
+					$response = ( new Client() )->request( 'POST', '/api/v3/ai/plugins/' . rawurlencode( $agent ) . '/runs', $body, $token );
+					$current  = (array) get_transient( $scope );
+					if ( ( $current['thread_id'] ?? '' ) === $state['thread_id'] ) {
+						$current['conversation_id'] = $response['conversation_id'] ?? ( $current['conversation_id'] ?? '' );
+						$current['actions']         = array_values( array_unique( array_merge( (array) ( $current['actions'] ?? array() ), ChatSession::actions( $response ) ) ) );
+						set_transient( $scope, $current, 15 * MINUTE_IN_SECONDS );
+					}
+					return $response;
+				}
+			);
 			return $this->reply( $response );
 		} catch ( \Throwable $error ) {
 			return $this->error( $error, 502 );
+		}
+	}
+
+	private function require_action( WP_REST_Request $request ): array {
+		list( $token, , $scope ) = $this->identity( $request );
+		$state                   = (array) get_transient( $scope );
+		$id                      = (string) $request->get_param( 'id' );
+		if ( ! in_array( $id, (array) ( $state['actions'] ?? array() ), true ) || ( $state['thread_id'] ?? '' ) !== $request->get_param( 'thread_id' ) ) {
+			throw new \RuntimeException( esc_html__( 'この会話で確認できる操作ではありません。', 'fourmix-intelligence' ) );
+		}
+		return array( $token, $scope, $id );
+	}
+
+	public function action( WP_REST_Request $request ): WP_REST_Response {
+		try {
+			list( $token, $scope, $id ) = $this->require_action( $request );
+			$response                   = ( new Client() )->request( 'GET', '/api/v3/connection-actions/' . rawurlencode( $id ), null, $token );
+			$response['can_confirm']    = false;
+			if ( 'confirmation_required' === ( $response['status'] ?? '' ) ) {
+				try {
+					$this->validate_native_action( $response );
+					$response['can_confirm'] = true;
+				} catch ( \Throwable $error ) {
+					$response['message'] = $error->getMessage();
+				}
+			}
+			$receipt = ( new ExecutionJournal() )->find(
+				$scope,
+				$id,
+				array(
+					'operation' => 'studio.confirm',
+					'id'        => $id,
+				)
+			);
+			if ( $receipt && 'unknown_effect' === $receipt['state'] && 'confirmation_required' === ( $response['status'] ?? '' ) ) {
+				$response['status'] = 'unknown_effect';
+			}
+			return $this->reply( $response );
+		} catch ( \Throwable $error ) {
+			return $this->error( $error, 403 );
+		}
+	}
+
+	private function validate_native_action( array $preview ): void {
+		$name = (string) ( $preview['operation_id'] ?? '' );
+		$args = (array) ( $preview['arguments'] ?? array() );
+		unset( $args['idempotency_key'] );
+		( new NativeBridgeController() )->validate_operation( $name, $args );
+	}
+
+	public function confirm_action( WP_REST_Request $request ): WP_REST_Response {
+		try {
+			list( $token, $scope, $id ) = $this->require_action( $request );
+			if ( true !== $request->get_param( 'approved' ) ) {
+				throw new \RuntimeException( esc_html__( '操作内容を確認して承認してください。', 'fourmix-intelligence' ) );
+			}
+			$intent   = array(
+				'operation' => 'studio.confirm',
+				'id'        => $id,
+			);
+			$existing = ( new ExecutionJournal() )->find( $scope, $id, $intent );
+			if ( null !== $existing ) {
+				return $this->reply(
+					'succeeded' === $existing['state'] ? $existing['data'] : array(
+						'status' => 'unknown_effect',
+						'id'     => $id,
+					)
+				);
+			}
+			$preview = ( new Client() )->request( 'GET', '/api/v3/connection-actions/' . rawurlencode( $id ), null, $token );
+			if ( 'confirmation_required' !== ( $preview['status'] ?? '' ) ) {
+				return $this->reply( $preview );
+			}
+			$this->validate_native_action( $preview );
+			$result = ( new ExecutionJournal() )->run( $scope, $id, $intent, static fn() => ( new Client() )->request( 'POST', '/api/v3/connection-actions/' . rawurlencode( $id ) . '/confirm', array(), $token ) );
+			return $this->reply(
+				'succeeded' === $result['state'] ? $result['data'] : array(
+					'status' => 'unknown_effect',
+					'id'     => $id,
+				)
+			);
+		} catch ( \Throwable $error ) {
+			return $this->error( $error, 403 );
 		}
 	}
 
