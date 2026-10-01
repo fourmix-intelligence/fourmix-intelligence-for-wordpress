@@ -15,7 +15,7 @@ final class StaffController {
 	}
 
 	public function routes(): void {
-		foreach ( array( 'connect', 'catalog', 'chat', 'preview', 'confirm' ) as $action ) {
+		foreach ( array( 'connect', 'catalog', 'select', 'chat', 'preview', 'confirm' ) as $action ) {
 			register_rest_route(
 				'fourmix-intelligence/v1',
 				'/staff/' . $action,
@@ -38,7 +38,9 @@ final class StaffController {
 
 	private function token(): string {
 		$value = (array) get_transient( $this->session_key() );
-		$token = isset( $value['encrypted'], $value['iv'], $value['tag'] ) ? openssl_decrypt( $value['encrypted'], 'aes-256-gcm', hash( 'sha256', wp_salt( 'auth' ), true ), 0, $value['iv'], $value['tag'] ) : false;
+		$iv    = base64_decode( (string) ( $value['iv'] ?? '' ), true );
+		$tag   = base64_decode( (string) ( $value['tag'] ?? '' ), true );
+		$token = isset( $value['encrypted'] ) && is_string( $iv ) && 12 === strlen( $iv ) && is_string( $tag ) && 16 === strlen( $tag ) ? openssl_decrypt( $value['encrypted'], 'aes-256-gcm', hash( 'sha256', wp_salt( 'auth' ), true ), 0, $iv, $tag ) : false;
 		if ( ! $token ) {
 			throw new \RuntimeException( esc_html__( '本人の接続が必要です。15分を過ぎた場合は接続し直してください。', 'fourmix-intelligence' ) );
 		}
@@ -65,12 +67,12 @@ final class StaffController {
 				$this->session_key(),
 				array(
 					'encrypted' => $encrypted,
-					'iv'        => $iv,
-					'tag'       => $tag,
+					'iv'        => base64_encode( $iv ),
+					'tag'       => base64_encode( $tag ),
 				),
 				15 * MINUTE_IN_SECONDS
 			);
-			return $this->reply( array( 'agents' => $this->safe_agents( $agents ) ) );
+			return $this->reply( $this->agent_selection( $agents ) );
 		} catch ( \Throwable $error ) {
 			return $this->error( $error );
 		}
@@ -86,9 +88,40 @@ final class StaffController {
 		);
 	}
 
+	private function agent_selection( array $agents ): array {
+		$selected = (string) get_user_meta( get_current_user_id(), 'fourmix_intelligence_internal_agent', true );
+		return array(
+			'agents'         => $this->safe_agents( $agents ),
+			'selected_agent' => in_array( $selected, wp_list_pluck( $agents, 'name' ), true ) ? $selected : '',
+		);
+	}
+
+	public function select( WP_REST_Request $request ): WP_REST_Response {
+		try {
+			$agents = ( new Client() )->catalog( 'internal', $this->token() );
+			$agent  = (string) $request->get_param( 'agent' );
+			if ( ! in_array( $agent, wp_list_pluck( $agents, 'name' ), true ) ) {
+				throw new \RuntimeException( esc_html__( '利用できる社内向けAIを選択してください。', 'fourmix-intelligence' ) );
+			}
+			update_user_meta( get_current_user_id(), 'fourmix_intelligence_internal_agent', $agent );
+			return $this->reply( $this->agent_selection( $agents ) );
+		} catch ( \Throwable $error ) {
+			return $this->error( $error );
+		}
+	}
+
 	public function catalog(): WP_REST_Response {
+		$selection = array(
+			'agents'         => array(),
+			'selected_agent' => '',
+		);
+		try {
+			$selection = $this->agent_selection( ( new Client() )->catalog( 'internal', $this->token() ) );
+		} catch ( \Throwable $error ) {
+			// 期限切れの本人接続は復元せず、業務の権限一覧だけを返します。
+		}
 		return $this->reply(
-			array(
+			$selection + array(
 				'operations'   => ( new NativeBridgeController() )->capabilities(),
 				'woocommerce'  => class_exists( 'WooCommerce' ),
 				'appointments' => class_exists( 'WC_Bookings' ) ? 'detected_not_enabled' : 'not_detected',
@@ -193,6 +226,12 @@ final class StaffController {
 		if ( ! empty( $args['id'] ) && str_starts_with( $name, 'content.' ) ) {
 			$post = get_post( $args['id'] );
 			return hash( 'sha256', wp_json_encode( array( $post->post_title, $post->post_content, $post->post_status, $post->post_modified_gmt ) ) );
+		}
+		if ( ! empty( $args['id'] ) && function_exists( 'wc_get_product' ) ) {
+			$record = str_starts_with( $name, 'products.' ) ? wc_get_product( $args['id'] ) : ( str_starts_with( $name, 'orders.' ) ? wc_get_order( $args['id'] ) : null );
+			if ( $record ) {
+				return hash( 'sha256', wp_json_encode( $record->get_data() ) );
+			}
 		}
 		return '';
 	}

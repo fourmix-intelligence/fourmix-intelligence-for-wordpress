@@ -5,6 +5,11 @@
   const byId = (id) => document.getElementById(id);
   const labels = {id: __('対象ID'), post_type: __('投稿の種類'), title: __('タイトル'), content: __('本文'), status: __('状態'), query: __('検索語'), limit: __('件数'), name: __('名称'), description: __('説明'), regular_price: __('通常価格'), stock_quantity: __('在庫数'), note: __('備考'), code: __('コード'), amount: __('金額'), discount_type: __('割引方式')};
   let operations = [], pending = null;
+  function restoreAgents(data) {
+    byId('fmi-staff-agent').replaceChildren(new Option(__('StudioのAIを選択'), ''), ...data.agents.map((agent) => new Option(agent.label, agent.name)));
+    byId('fmi-staff-agent').value = data.selected_agent || '';
+    byId('fmi-chat').querySelector('[type="submit"]').disabled = !data.selected_agent;
+  }
   byId('fmi-chat').querySelector('[type="submit"]').disabled = true;
   byId('fmi-operation').querySelector('[type="submit"]').disabled = true;
   async function request(action, body) {
@@ -23,10 +28,18 @@
       const token = byId('fmi-personal-token').value;
       byId('fmi-personal-token').value = '';
       const data = await request('connect', {token});
-      byId('fmi-staff-agent').replaceChildren(...data.agents.map((agent) => new Option(agent.label, agent.name)));
-      byId('fmi-chat').querySelector('[type="submit"]').disabled = !data.agents.length;
+      restoreAgents(data);
       byId('fmi-result').textContent = __('本人のAIに接続しました。');
     });
+  });
+  byId('fmi-staff-agent').addEventListener('change', () => {
+    const button = byId('fmi-chat').querySelector('[type="submit"]');
+    button.disabled = true;
+    if (!byId('fmi-staff-agent').value) return;
+    request('select', {agent: byId('fmi-staff-agent').value}).then((data) => {
+      restoreAgents(data);
+      byId('fmi-result').textContent = __('AIの選択を保存しました。');
+    }).catch((error) => { byId('fmi-result').textContent = error.message; });
   });
   byId('fmi-chat').addEventListener('submit', (event) => {
     event.preventDefault();
@@ -75,6 +88,7 @@
     byId('fmi-confirm').hidden = true; pending = null;
   }));
   request('catalog').then((data) => {
+    restoreAgents(data);
     operations = data.operations;
     byId('fmi-action').replaceChildren(...operations.map((operation) => new Option(operation.description, operation.name)));
     byId('fmi-operation').querySelector('[type="submit"]').disabled = !operations.length;

@@ -9,7 +9,7 @@ use WP_REST_Response;
 
 /** FinCubeへ、管理者が選んだWordPress業務だけを署名付きで公開します。 */
 final class NativeBridgeController {
-	private const GROUPS = array( 'content', 'media', 'users', 'products', 'orders', 'coupons' );
+	private const GROUPS = array( 'content', 'media', 'users', 'products', 'orders', 'customers', 'coupons' );
 
 	public function register(): void {
 		add_action( 'fourmix_intelligence_cleanup_nonce', 'delete_option' );
@@ -229,6 +229,26 @@ final class NativeBridgeController {
 				),
 			),
 			'products.get'         => array( 'products', true, false, 'WooCommerce商品を確認', $obj( array( 'id' => $id ), array( 'id' ) ) ),
+			'customers.list'       => array(
+				'customers',
+				true,
+				false,
+				'WooCommerce顧客を検索',
+				$obj(
+					array(
+						'query' => array(
+							'type'      => 'string',
+							'maxLength' => 200,
+						),
+						'limit' => array(
+							'type'    => 'integer',
+							'minimum' => 1,
+							'maximum' => 50,
+						),
+					)
+				),
+			),
+			'customers.get'        => array( 'customers', true, false, 'WooCommerce顧客を確認', $obj( array( 'id' => $id ), array( 'id' ) ) ),
 			'products.save'        => array(
 				'products',
 				false,
@@ -331,7 +351,7 @@ final class NativeBridgeController {
 		$enabled = array_intersect( (array) Options::get( 'bridge_groups', array() ), self::GROUPS );
 		$result  = array();
 		foreach ( $this->definitions() as $name => $definition ) {
-			if ( in_array( $definition[0], $enabled, true ) && $this->can_use( $definition[0] ) && ( ! in_array( $definition[0], array( 'products', 'orders', 'coupons' ), true ) || class_exists( 'WooCommerce' ) ) ) {
+			if ( in_array( $definition[0], $enabled, true ) && $this->can_use( $definition[0] ) && ( ! in_array( $definition[0], array( 'products', 'orders', 'customers', 'coupons' ), true ) || class_exists( 'WooCommerce' ) ) && $this->can_operation( $name ) ) {
 				$schema = $definition[4];
 				if ( ! $definition[1] ) {
 					$schema['properties']['idempotency_key'] = array(
@@ -409,21 +429,51 @@ final class NativeBridgeController {
 				throw new \RuntimeException( __( 'この公開・作成操作は許可されていません。', 'fourmix-intelligence' ) );
 			}
 		}
-		if ( 'products.save' === $name && ! empty( $a['id'] ) && ! current_user_can( 'edit_post', $a['id'] ) ) {
-			throw new \RuntimeException( __( 'この商品を変更する権限がありません。', 'fourmix-intelligence' ) );
+		if ( str_starts_with( $name, 'products.' ) ) {
+			$product = ! empty( $a['id'] ) ? wc_get_product( $a['id'] ) : null;
+			if ( ! empty( $a['id'] ) && ( ! $product || ! current_user_can( 'products.save' === $name ? 'edit_post' : 'read_post', $a['id'] ) ) ) {
+				throw new \RuntimeException( __( 'この商品を操作する権限がありません。', 'fourmix-intelligence' ) );
+			}
+			$type = get_post_type_object( 'product' );
+			if ( 'products.save' === $name && ( ( ! $product && ! current_user_can( $type->cap->create_posts ) ) || ( 'publish' === ( $a['status'] ?? '' ) && ! current_user_can( $type->cap->publish_posts ) ) ) ) {
+				throw new \RuntimeException( __( 'この商品の作成・公開は許可されていません。', 'fourmix-intelligence' ) );
+			}
 		}
+		if ( str_starts_with( $name, 'orders.' ) ) {
+			$operation = 'orders.update_status' === $name ? 'edit' : 'read';
+			if ( ! empty( $a['id'] ) && ( ! wc_get_order( $a['id'] ) || ! wc_rest_check_post_permissions( 'shop_order', $operation, $a['id'] ) ) ) {
+				throw new \RuntimeException( __( 'この注文を操作する権限がありません。', 'fourmix-intelligence' ) );
+			}
+			if ( isset( $a['status'] ) && ! ( 'orders.list' === $name && 'any' === $a['status'] ) && ! isset( wc_get_order_statuses()[ 'wc-' . $a['status'] ] ) ) {
+				throw new \RuntimeException( __( '導入済みの注文状態を選択してください。', 'fourmix-intelligence' ) );
+			}
+		}
+		if ( 'customers.get' === $name ) {
+			$user = get_user_by( 'id', $a['id'] );
+			if ( ! $user || ! in_array( 'customer', $user->roles, true ) ) {
+				throw new \RuntimeException( __( 'WooCommerce顧客が見つかりません。', 'fourmix-intelligence' ) );
+			}
+		}
+	}
+
+	private function can_operation( string $name ): bool {
+		if ( str_starts_with( $name, 'orders.' ) ) {
+			return 'orders.update_status' === $name ? current_user_can( 'edit_shop_orders' ) : wc_rest_check_post_permissions( 'shop_order', 'read' );
+		}
+		return 'coupons.create' !== $name || ( current_user_can( 'edit_shop_coupons' ) && current_user_can( 'publish_shop_coupons' ) );
 	}
 
 	private function can_use( string $group ): bool {
 		$cap = array(
-			'content'  => 'edit_posts',
-			'media'    => 'upload_files',
-			'users'    => 'list_users',
-			'products' => 'edit_products',
-			'orders'   => 'manage_woocommerce',
-			'coupons'  => 'manage_woocommerce',
+			'content'   => 'edit_posts',
+			'media'     => 'upload_files',
+			'users'     => 'list_users',
+			'products'  => 'edit_products',
+			'orders'    => 'manage_woocommerce',
+			'customers' => 'list_users',
+			'coupons'   => 'edit_shop_coupons',
 		);
-		return isset( $cap[ $group ] ) && current_user_can( $cap[ $group ] );
+		return isset( $cap[ $group ] ) && current_user_can( $cap[ $group ] ) && ( 'customers' !== $group || current_user_can( 'manage_woocommerce' ) );
 	}
 
 	public function perform( string $name, array $a ): mixed {
@@ -526,11 +576,16 @@ final class NativeBridgeController {
 		if ( 'products.list' === $name ) {
 			return array_map(
 				fn( $id ) => $this->product( wc_get_product( $id ) ),
-				wc_get_products(
-					array(
-						's'      => sanitize_text_field( $a['query'] ?? '' ),
-						'limit'  => min( 50, max( 1, (int) ( $a['limit'] ?? 20 ) ) ),
-						'return' => 'ids',
+				array_values(
+					array_filter(
+						wc_get_products(
+							array(
+								's'      => sanitize_text_field( $a['query'] ?? '' ),
+								'limit'  => min( 50, max( 1, (int) ( $a['limit'] ?? 20 ) ) ),
+								'return' => 'ids',
+							)
+						),
+						static fn( $id ) => current_user_can( 'read_post', $id )
 					)
 				)
 			);
@@ -563,10 +618,15 @@ final class NativeBridgeController {
 					'total'      => $o->get_total(),
 					'created_at' => $o->get_date_created()?->date( DATE_ATOM ),
 				),
-				wc_get_orders(
-					array(
-						'status' => sanitize_key( $a['status'] ?? 'any' ),
-						'limit'  => min( 50, max( 1, (int) ( $a['limit'] ?? 20 ) ) ),
+				array_values(
+					array_filter(
+						wc_get_orders(
+							array(
+								'status' => sanitize_key( $a['status'] ?? 'any' ),
+								'limit'  => min( 50, max( 1, (int) ( $a['limit'] ?? 20 ) ) ),
+							)
+						),
+						static fn( $order ) => wc_rest_check_post_permissions( 'shop_order', 'read', $order->get_id() )
 					)
 				)
 			);
@@ -596,6 +656,23 @@ final class NativeBridgeController {
 				'id'     => $o->get_id(),
 				'status' => $o->get_status(),
 			); }
+		if ( 'customers.list' === $name || 'customers.get' === $name ) {
+			$users = 'customers.get' === $name ? array( get_user_by( 'id', $a['id'] ) ) : get_users(
+				array(
+					'role'   => 'customer',
+					'search' => '*' . sanitize_text_field( $a['query'] ?? '' ) . '*',
+					'number' => min( 50, max( 1, (int) ( $a['limit'] ?? 20 ) ) ),
+				)
+			);
+			$rows  = array_map(
+				static fn( $user ) => array(
+					'id'   => $user->ID,
+					'name' => $user->display_name,
+				),
+				$users
+			);
+			return 'customers.get' === $name ? $rows[0] : $rows;
+		}
 		if ( 'coupons.list' === $name ) {
 			return array_map(
 				fn( $p ) => array(

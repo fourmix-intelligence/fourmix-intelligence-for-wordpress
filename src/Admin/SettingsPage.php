@@ -37,8 +37,21 @@ final class SettingsPage {
 
 	/** @param mixed $input @return array<string, mixed> */
 	public function sanitize( mixed $input ): array {
-		$input         = is_array( $input ) ? $input : array();
-		$current       = (array) get_option( 'fourmix_intelligence_settings', array() );
+		$input   = is_array( $input ) ? $input : array();
+		$current = (array) get_option( 'fourmix_intelligence_settings', array() );
+		$agent   = sanitize_key( (string) ( $input['agent'] ?? '' ) );
+		$token   = '' !== (string) ( $input['token'] ?? '' ) ? sanitize_text_field( (string) $input['token'] ) : (string) ( $current['token'] ?? '' );
+		if ( '' !== $agent && ( $current['agent'] ?? '' ) !== $agent ) {
+			try {
+				$catalog = ( new \FourmixIntelligence\WordPress\Http\Client() )->catalog( 'customer', $token );
+				if ( ! in_array( $agent, wp_list_pluck( $catalog, 'name' ), true ) ) {
+					throw new \RuntimeException( esc_html__( '利用できるお客様向けStudio AIを選択してください。', 'fourmix-intelligence' ) );
+				}
+			} catch ( \Throwable $error ) {
+				add_settings_error( 'fourmix_intelligence_settings', 'agent', $error->getMessage() );
+				$agent = (string) ( $current['agent'] ?? '' );
+			}
+		}
 		$bridge_secret = (string) ( $input['bridge_secret'] ?? '' );
 		if ( '' !== $bridge_secret && strlen( $bridge_secret ) < 32 ) {
 			add_settings_error( 'fourmix_intelligence_settings', 'bridge_secret', __( 'FinCube接続共有キーは32文字以上で入力してください。', 'fourmix-intelligence' ) );
@@ -49,8 +62,8 @@ final class SettingsPage {
 		}
 		return array(
 			'url'               => esc_url_raw( (string) ( $input['url'] ?? 'https://mcp.ai.fourmix.co.jp' ) ),
-			'token'             => '' !== (string) ( $input['token'] ?? '' ) ? sanitize_text_field( (string) $input['token'] ) : (string) ( $current['token'] ?? '' ),
-			'agent'             => sanitize_key( (string) ( $input['agent'] ?? '' ) ),
+			'token'             => $token,
+			'agent'             => $agent,
 			'internal_agent'    => sanitize_key( (string) ( $input['internal_agent'] ?? '' ) ),
 			'bridge_user_id'    => absint( $input['bridge_user_id'] ?? 0 ),
 			'dataset'           => sanitize_text_field( (string) ( $input['dataset'] ?? '' ) ),
@@ -59,7 +72,7 @@ final class SettingsPage {
 			'conversation_mode' => in_array( $input['conversation_mode'] ?? '', array( 'temporary', 'history' ), true ) ? $input['conversation_mode'] : 'history',
 			'sync_post_types'   => array_values( array_intersect( array_map( 'sanitize_key', (array) ( $input['sync_post_types'] ?? array() ) ), get_post_types( array( 'public' => true ) ) ) ),
 			'bridge_secret'     => '' !== $bridge_secret ? sanitize_text_field( $bridge_secret ) : (string) ( $current['bridge_secret'] ?? '' ),
-			'bridge_groups'     => array_values( array_intersect( array_map( 'sanitize_key', (array) ( $input['bridge_groups'] ?? array() ) ), array( 'content', 'media', 'users', 'products', 'orders', 'coupons' ) ) ),
+			'bridge_groups'     => array_values( array_intersect( array_map( 'sanitize_key', (array) ( $input['bridge_groups'] ?? array() ) ), array( 'content', 'media', 'users', 'products', 'orders', 'customers', 'coupons' ) ) ),
 		);
 	}
 
@@ -117,12 +130,13 @@ final class SettingsPage {
 		<tr><th><?php esc_html_e( 'FinCubeへ許可する業務', 'fourmix-intelligence' ); ?></th><td>
 		<?php
 		foreach ( array(
-			'content'  => '投稿・固定ページ',
-			'media'    => 'メディア',
-			'users'    => '利用者',
-			'products' => 'WooCommerce商品',
-			'orders'   => 'WooCommerce注文',
-			'coupons'  => 'WooCommerceクーポン',
+			'content'   => '投稿・固定ページ',
+			'media'     => 'メディア',
+			'users'     => '利用者',
+			'products'  => 'WooCommerce商品',
+			'orders'    => 'WooCommerce注文',
+			'customers' => 'WooCommerce顧客（ID・表示名）',
+			'coupons'   => 'WooCommerceクーポン',
 		) as $key => $label ) :
 			?>
 			<label style="display:block"><input type="checkbox" name="fourmix_intelligence_settings[bridge_groups][]" value="<?php echo esc_attr( $key ); ?>" <?php checked( in_array( $key, (array) ( $options['bridge_groups'] ?? array() ), true ) ); ?>> <?php echo esc_html( $label ); ?></label><?php endforeach; ?><p class="description"><?php esc_html_e( '選んだ業務だけが署名付きで公開され、実行時にも再確認されます。', 'fourmix-intelligence' ); ?></p></td></tr>
