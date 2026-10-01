@@ -31,7 +31,19 @@ Fourmix Intelligence の AI 接客、サイト内案内、資料同期を WordPr
 
 商品名、説明、分類、商品IDなど検索に必要な情報だけを差分同期します。在庫のように頻繁に変わる情報は索引へ反映せず、最終表示や購入時には WooCommerce の最新状態を利用します。AI の構造化結果に含まれる商品リンクも回答文とは別に表示します。
 
-## 開発
+## 公開AIとリバースプロキシ
+
+公開会話 API は scheme・host・実効 port を含めて同じサイトか確認します。Origin 不一致は403、回数超過は429です。拒否理由は `fourmix_intelligence_public_request_denied` アクションに `origin_mismatch`、`invalid_client_ip`、`rate_limited` のコードで通知します。本文、IP、トークンはこの通知へ含めません。
+
+既定では転送ヘッダーを信頼せず、接続元IPを使用します。プロキシ経由の場合は管理者が `wp-config.php` に実際のプロキシIPまたはCIDRだけを指定してください。
+
+```php
+define( 'FOURMIX_INTELLIGENCE_TRUSTED_PROXIES', array( '192.0.2.10', '2001:db8:2::/64' ) );
+```
+
+上記は説明用のアドレスです。プロキシは X-Forwarded-For に実際の接続元を正しく追記してください。直接の接続元が許可範囲内のときだけ右側の信頼するプロキシを除き、最初の非信頼IPを利用者として扱います。任意の転送ヘッダーや `Forwarded` は認可根拠にしません。全インターネットを信頼範囲へ指定しないでください。
+
+## 開発環境
 
 WordPress 6.7 以降、PHP 8.1 以降を対象にしています。ビルドツールなしでも配布 ZIP が動作するよう、実行に必要な JavaScript と CSS を同梱しています。
 

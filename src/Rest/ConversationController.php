@@ -4,6 +4,7 @@ namespace FourmixIntelligence\WordPress\Rest;
 
 use FourmixIntelligence\WordPress\Http\Client;
 use FourmixIntelligence\WordPress\Support\Options;
+use FourmixIntelligence\WordPress\Support\PublicRequestGuard;
 use WP_REST_Request;
 use WP_REST_Response;
 
@@ -32,8 +33,9 @@ final class ConversationController {
 	}
 
 	public function chat( WP_REST_Request $request ): WP_REST_Response {
-		if ( ! $this->same_origin( $request ) || ! $this->rate_limit() ) {
-			return new WP_REST_Response( array( 'message' => 'しばらく待ってから、もう一度お試しください。' ), 429 );
+		$denied = $this->access_error( $request );
+		if ( null !== $denied ) {
+			return $denied;
 		}
 		$message = sanitize_textarea_field( (string) $request->get_param( 'message' ) );
 		if ( '' === $message || mb_strlen( $message ) > 5000 ) {
@@ -61,8 +63,12 @@ final class ConversationController {
 	}
 
 	public function history( WP_REST_Request $request ): WP_REST_Response {
-		if ( 'history' !== Options::get( 'conversation_mode', 'history' ) || ! $this->same_origin( $request ) || ! $this->rate_limit() ) {
+		if ( 'history' !== Options::get( 'conversation_mode', 'history' ) ) {
 			return new WP_REST_Response( array(), 403 );
+		}
+		$denied = $this->access_error( $request );
+		if ( null !== $denied ) {
+			return $denied;
 		}
 		$body = array(
 			'conversation_id' => sanitize_text_field( (string) $request->get_param( 'conversation_id' ) ),
@@ -76,14 +82,30 @@ final class ConversationController {
 			return new WP_REST_Response( array( 'message' => '会話履歴を読み込めませんでした。' ), 502 ); }
 	}
 
-	private function same_origin( WP_REST_Request $request ): bool {
-		$origin = $request->get_header( 'origin' );
-		return $origin && strtolower( (string) wp_parse_url( $origin, PHP_URL_HOST ) ) === strtolower( (string) wp_parse_url( home_url(), PHP_URL_HOST ) );
+	private function access_error( WP_REST_Request $request ): ?WP_REST_Response {
+		if ( ! PublicRequestGuard::same_origin( (string) $request->get_header( 'origin' ), home_url() ) ) {
+			do_action( 'fourmix_intelligence_public_request_denied', 'origin_mismatch' );
+			return new WP_REST_Response( array( 'message' => __( 'このサイトからアクセスしてください。', 'fourmix-intelligence' ) ), 403 );
+		}
+		$proxies = defined( 'FOURMIX_INTELLIGENCE_TRUSTED_PROXIES' ) ? constant( 'FOURMIX_INTELLIGENCE_TRUSTED_PROXIES' ) : array();
+		$address = PublicRequestGuard::client_ip(
+			sanitize_text_field( wp_unslash( $_SERVER['REMOTE_ADDR'] ?? '' ) ),
+			(string) $request->get_header( 'x-forwarded-for' ),
+			is_array( $proxies ) ? $proxies : array()
+		);
+		if ( null === $address ) {
+			do_action( 'fourmix_intelligence_public_request_denied', 'invalid_client_ip' );
+			return new WP_REST_Response( array( 'message' => __( 'アクセス元を確認できませんでした。', 'fourmix-intelligence' ) ), 403 );
+		}
+		if ( ! $this->rate_limit( $address ) ) {
+			do_action( 'fourmix_intelligence_public_request_denied', 'rate_limited' );
+			return new WP_REST_Response( array( 'message' => __( 'しばらく待ってから、もう一度お試しください。', 'fourmix-intelligence' ) ), 429 );
+		}
+		return null;
 	}
-	private function rate_limit(): bool {
-		$address = sanitize_text_field( wp_unslash( $_SERVER['REMOTE_ADDR'] ?? '' ) );
-		$key     = 'fmi_rate_' . hash_hmac( 'sha256', $address, wp_salt( 'nonce' ) );
-		$count   = (int) get_transient( $key );
+	private function rate_limit( string $address ): bool {
+		$key   = 'fmi_rate_' . hash_hmac( 'sha256', (string) inet_pton( $address ), wp_salt( 'nonce' ) );
+		$count = (int) get_transient( $key );
 		if ( $count >= 30 ) {
 			return false;
 		}
