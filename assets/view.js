@@ -1,8 +1,9 @@
 (function () {
   'use strict';
   const settings = window.FourmixIntelligenceSettings || {};
-  const persistentKey = 'fourmix_intelligence_conversation_v1';
-  const temporaryKey = 'fourmix_intelligence_session_v1';
+  const __ = (message) => wp.i18n.__(message, 'fourmix-intelligence');
+  const persistentKey = 'fourmix_intelligence_conversation_v2_' + (settings.agent || 'unconfigured');
+  const temporaryKey = 'fourmix_intelligence_session_v2_' + (settings.agent || 'unconfigured');
   const storage = () => settings.conversationMode === 'history' ? window.localStorage : window.sessionStorage;
   const storageKey = () => settings.conversationMode === 'history' ? persistentKey : temporaryKey;
   function state() { try { return JSON.parse(storage().getItem(storageKey()) || '{}'); } catch (_) { return {}; } }
@@ -17,7 +18,7 @@
     if (!response.ok) throw new Error(payload.message || 'ご案内を準備できませんでした。');
     save(payload); return payload;
   }
-  function cacheKey(kind) { return 'fmi_auto_' + window.btoa(unescape(encodeURIComponent(kind + '|' + window.location.pathname + '|' + context(kind).product_ids.join(',')))).replace(/=/g, ''); }
+  function cacheKey(kind) { return 'fmi_auto_' + window.btoa(unescape(encodeURIComponent(settings.agent + '|' + kind + '|' + window.location.pathname + '|' + context(kind).product_ids.join(',')))).replace(/=/g, ''); }
   function cached(kind) { try { const value = JSON.parse(sessionStorage.getItem(cacheKey(kind)) || 'null'); return value && Date.now() - value.at < 300000 ? value.payload : null; } catch (_) { return null; } }
   function cache(kind, payload) { try { sessionStorage.setItem(cacheKey(kind), JSON.stringify({at: Date.now(), payload})); } catch (_) {} }
   function text(node, value) { const p = document.createElement('p'); p.className = 'fmi-answer'; p.textContent = value; node.appendChild(p); }
@@ -31,7 +32,10 @@
       if (item.price_html) { const price = document.createElement('div'); price.className = 'fmi-price'; price.innerHTML = item.price_html; card.appendChild(price); }
       if (item.reason) { const reason = document.createElement('p'); reason.textContent = item.reason; card.appendChild(reason); }
       const actions = document.createElement('div'); actions.className = 'fmi-actions';
-      const link = document.createElement('a'); link.className = 'fmi-button fmi-button--secondary'; link.href = item.product_url || '#'; link.textContent = '商品を確認'; actions.appendChild(link);
+      const link = document.createElement('a'); link.className = 'fmi-button fmi-button--secondary';
+      let target; try { target = new URL(item.product_url || '', location.origin); } catch (_) { return; }
+      if (!['http:', 'https:'].includes(target.protocol) || target.origin !== location.origin) return;
+      link.href = target.href; link.textContent = item.post_id ? __('内容を確認') : __('商品を確認'); actions.appendChild(link);
       if (item.purchasable && item.product_id && settings.addToCartEndpoint) {
         const add = document.createElement('button'); add.type = 'button'; add.className = 'fmi-button'; add.textContent = 'カートに追加';
         add.addEventListener('click', async () => { add.disabled = true; try { const response = await fetch(settings.addToCartEndpoint, {method: 'POST', credentials: 'same-origin', headers: {'Content-Type': 'application/x-www-form-urlencoded'}, body: new URLSearchParams({product_id: String(item.product_id), quantity: '1'})}); if (!response.ok) throw new Error(); add.textContent = '追加しました'; document.body.dispatchEvent(new CustomEvent('wc_fragment_refresh')); } catch (_) { window.location.href = item.product_url; } finally { add.disabled = false; } });

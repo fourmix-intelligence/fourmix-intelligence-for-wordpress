@@ -10,7 +10,8 @@ final class BlockRegistry {
 		add_action( 'init', array( $this, 'blocks' ) ); }
 	public function blocks(): void {
 		wp_register_script( 'fourmix-intelligence-editor', FOURMIX_INTELLIGENCE_URL . 'assets/editor.js', array( 'wp-blocks', 'wp-element', 'wp-i18n', 'wp-block-editor', 'wp-components' ), FOURMIX_INTELLIGENCE_VERSION, true );
-		wp_register_script( 'fourmix-intelligence-view', FOURMIX_INTELLIGENCE_URL . 'assets/view.js', array(), FOURMIX_INTELLIGENCE_VERSION, true );
+		wp_register_script( 'fourmix-intelligence-view', FOURMIX_INTELLIGENCE_URL . 'assets/view.js', array( 'wp-i18n' ), FOURMIX_INTELLIGENCE_VERSION, true );
+		wp_set_script_translations( 'fourmix-intelligence-view', 'fourmix-intelligence' );
 		wp_register_style( 'fourmix-intelligence-blocks', FOURMIX_INTELLIGENCE_URL . 'assets/blocks.css', array(), FOURMIX_INTELLIGENCE_VERSION );
 		wp_localize_script(
 			'fourmix-intelligence-view',
@@ -20,6 +21,7 @@ final class BlockRegistry {
 				'historyEndpoint'   => esc_url_raw( rest_url( 'fourmix-intelligence/v1/history' ) ),
 				'conversationMode'  => Options::get( 'conversation_mode', 'history' ),
 				'enabled'           => Options::enabled(),
+				'agent'             => Options::public_agent(),
 				'addToCartEndpoint' => class_exists( 'WooCommerce' ) ? esc_url_raw( \WC_AJAX::get_endpoint( 'add_to_cart' ) ) : '',
 			)
 		);
@@ -50,7 +52,7 @@ final class BlockRegistry {
 				'data-fmi-auto' => $auto ? '1' : '0',
 			)
 		);
-		return sprintf( '<section %1$s><div class="fmi-block__header"><span class="fmi-block__mark" aria-hidden="true">✦</span><h2>%2$s</h2></div><div class="fmi-block__body" aria-live="polite"></div></section>', $wrapper, esc_html( $title ) );
+		return sprintf( '<section %1$s><div class="fmi-block__header"><h2>%2$s</h2></div><div class="fmi-block__body" aria-live="polite"></div></section>', $wrapper, esc_html( $title ) );
 	}
 	private function title( string $kind ): string {
 		return array(

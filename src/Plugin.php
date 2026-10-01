@@ -19,6 +19,8 @@ final class Plugin {
 		add_filter( 'cron_schedules', array( $this, 'cron_schedules' ) );
 		$this->ensure_sync_schedule();
 		( new SettingsPage() )->register();
+		( new \FourmixIntelligence\WordPress\Admin\OperationsPage() )->register();
+		( new \FourmixIntelligence\WordPress\Rest\StaffController() )->register();
 		( new BlockRegistry() )->register();
 		( new ConversationController() )->register();
 		( new NativeBridgeController() )->register();

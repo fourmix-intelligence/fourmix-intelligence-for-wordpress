@@ -73,18 +73,17 @@ final class AbilityIntegration {
 	/** @param array{message:string} $input @return array{answer:string, data:array<string, mixed>}|\WP_Error */
 	public function ask( array $input ): array|\WP_Error {
 		try {
-			$response = ( new Client() )->post(
-				'/api/v3/ai/plugins/' . Options::get( 'agent' ) . '/runs',
-				array(
-					'messages' => array(
-						array(
-							'role'    => 'user',
-							'content' => sanitize_textarea_field( $input['message'] ),
-						),
-					),
-					'options'  => array( 'channel' => 'wordpress-ability' ),
-				)
-			);
+			if ( ! current_user_can( 'edit_posts' ) ) {
+				throw new \RuntimeException( esc_html__( '編集担当者の権限が必要です。', 'fourmix-intelligence' ) );
+			}
+			$request = new \WP_REST_Request( 'POST' );
+			$request->set_param( 'agent', get_user_meta( get_current_user_id(), 'fourmix_intelligence_internal_agent', true ) );
+			$request->set_param( 'message', $input['message'] );
+			$result = ( new \FourmixIntelligence\WordPress\Rest\StaffController() )->chat( $request );
+			if ( 200 !== $result->get_status() ) {
+				throw new \RuntimeException( esc_html__( '運営支援画面で本人のAIに接続してください。', 'fourmix-intelligence' ) );
+			}
+			$response = $result->get_data();
 			return array(
 				'answer' => (string) ( $response['result']['answer'] ?? '' ),
 				'data'   => is_array( $response['result']['data'] ?? null ) ? $response['result']['data'] : array(),

@@ -3,6 +3,7 @@
 namespace FourmixIntelligence\WordPress\Rest;
 
 use FourmixIntelligence\WordPress\Support\Options;
+use FourmixIntelligence\WordPress\Support\ExecutionJournal;
 use WP_REST_Request;
 use WP_REST_Response;
 
@@ -11,6 +12,7 @@ final class NativeBridgeController {
 	private const GROUPS = array( 'content', 'media', 'users', 'products', 'orders', 'coupons' );
 
 	public function register(): void {
+		add_action( 'fourmix_intelligence_cleanup_nonce', 'delete_option' );
 		add_action( 'rest_api_init', array( $this, 'routes' ) ); }
 	public function routes(): void {
 		register_rest_route(
@@ -45,7 +47,7 @@ final class NativeBridgeController {
 			return new \WP_Error( 'forbidden', __( '署名を確認できませんでした。', 'fourmix-intelligence' ), array( 'status' => 403 ) );
 		}
 		$key = 'fmi_nonce_' . hash( 'sha256', $nonce );
-		if ( get_transient( $key ) ) {
+		if ( get_option( $key, 0 ) > time() ) {
 			return new \WP_Error( 'replay', __( '同じ要求は再利用できません。', 'fourmix-intelligence' ), array( 'status' => 403 ) );
 		}
 		$canonical = implode( "\n", array( $timestamp, $nonce, $request->get_method(), '/wp-json' . $request->get_route(), $workspace, $connection, hash( 'sha256', (string) $request->get_body() ) ) );
@@ -54,18 +56,32 @@ final class NativeBridgeController {
 		}
 		$bound = (array) get_option( 'fourmix_intelligence_bridge_binding', array() );
 		if ( empty( $bound ) ) {
-			update_option(
+			add_option(
 				'fourmix_intelligence_bridge_binding',
 				array(
 					'workspace'  => $workspace,
 					'connection' => $connection,
 				),
+				'',
 				false
 			);
-		} elseif ( ! hash_equals( (string) ( $bound['workspace'] ?? '' ), $workspace ) || ! hash_equals( (string) ( $bound['connection'] ?? '' ), $connection ) ) {
+			$bound = (array) get_option( 'fourmix_intelligence_bridge_binding', array() );
+		}
+		if ( ! hash_equals( (string) ( $bound['workspace'] ?? '' ), $workspace ) || ! hash_equals( (string) ( $bound['connection'] ?? '' ), $connection ) ) {
 			return new \WP_Error( 'bound', __( 'このサイトは別のワークスペースへ接続済みです。', 'fourmix-intelligence' ), array( 'status' => 403 ) );
 		}
-		set_transient( $key, 1, 10 * MINUTE_IN_SECONDS );
+		if ( get_option( $key, 0 ) && get_option( $key, 0 ) <= time() ) {
+			delete_option( $key );
+		}
+		if ( ! add_option( $key, time() + 10 * MINUTE_IN_SECONDS, '', false ) ) {
+			return new \WP_Error( 'replay', __( '同じ要求は再利用できません。', 'fourmix-intelligence' ), array( 'status' => 403 ) );
+		}
+		wp_schedule_single_event( time() + 10 * MINUTE_IN_SECONDS, 'fourmix_intelligence_cleanup_nonce', array( $key ) );
+		$actor = get_user_by( 'id', absint( Options::get( 'bridge_user_id', 0 ) ) );
+		if ( ! $actor || ! is_user_member_of_blog( $actor->ID ) ) {
+			return new \WP_Error( 'actor_required', __( '接続の実行ユーザーを設定してください。', 'fourmix-intelligence' ), array( 'status' => 403 ) );
+		}
+		wp_set_current_user( $actor->ID );
 		return true;
 	}
 
@@ -311,18 +327,27 @@ final class NativeBridgeController {
 		);
 	}
 
-	private function capabilities(): array {
+	public function capabilities(): array {
 		$enabled = array_intersect( (array) Options::get( 'bridge_groups', array() ), self::GROUPS );
 		$result  = array();
 		foreach ( $this->definitions() as $name => $definition ) {
-			if ( in_array( $definition[0], $enabled, true ) && ( ! in_array( $definition[0], array( 'products', 'orders', 'coupons' ), true ) || class_exists( 'WooCommerce' ) ) ) {
+			if ( in_array( $definition[0], $enabled, true ) && $this->can_use( $definition[0] ) && ( ! in_array( $definition[0], array( 'products', 'orders', 'coupons' ), true ) || class_exists( 'WooCommerce' ) ) ) {
+				$schema = $definition[4];
+				if ( ! $definition[1] ) {
+					$schema['properties']['idempotency_key'] = array(
+						'type'      => 'string',
+						'minLength' => 8,
+						'maxLength' => 120,
+					);
+					$schema['required'][]                    = 'idempotency_key';
+				}
 				$result[] = array(
 					'name'         => $name,
 					'domain'       => $definition[0],
 					'description'  => $definition[3],
 					'read_only'    => $definition[1],
-					'destructive'  => $definition[2],
-					'input_schema' => $definition[4],
+					'destructive'  => ! $definition[1],
+					'input_schema' => $schema,
 					'keywords'     => array( $definition[0] ),
 				);
 			}
@@ -343,12 +368,66 @@ final class NativeBridgeController {
 		$payload = $request->get_json_params();
 		$args    = is_array( $payload['arguments'] ?? null ) ? $payload['arguments'] : array();
 		try {
-			return new WP_REST_Response( array( 'data' => $this->perform( $name, $args ) ) ); } catch ( \Throwable $error ) {
+			$key = (string) ( $args['idempotency_key'] ?? '' );
+			unset( $args['idempotency_key'] );
+			$this->validate_operation( $name, $args );
+			if ( $definitions[ $name ][1] ) {
+				return new WP_REST_Response(
+					array(
+						'state' => 'succeeded',
+						'data'  => $this->perform( $name, $args ),
+					)
+				);
+			}
+			$result = ( new ExecutionJournal() )->run(
+				wp_json_encode( get_option( 'fourmix_intelligence_bridge_binding' ) ),
+				$key,
+				array(
+					'operation' => $name,
+					'arguments' => $args,
+				),
+				fn() => $this->perform( $name, $args )
+			);
+			return new WP_REST_Response( $result, 'succeeded' === $result['state'] ? 200 : 409 );
+		} catch ( \Throwable $error ) {
 			return new WP_REST_Response( array( 'error' => sanitize_text_field( $error->getMessage() ) ), 422 ); }
 	}
 
-	private function perform( string $name, array $a ): mixed {
-		$this->validate_arguments( $this->definitions()[ $name ][4], $a );
+	public function validate_operation( string $name, array $a ): void {
+		$definition = $this->definitions()[ $name ] ?? null;
+		if ( ! $definition || ! in_array( $name, wp_list_pluck( $this->capabilities(), 'name' ), true ) ) {
+			throw new \RuntimeException( __( 'この操作は許可されていません。', 'fourmix-intelligence' ) );
+		}
+		$this->validate_arguments( $definition[4], $a );
+		if ( str_starts_with( $name, 'content.' ) ) {
+			$post = isset( $a['id'] ) ? get_post( $a['id'] ) : null;
+			if ( isset( $a['id'] ) && ( ! $post || ! in_array( $post->post_type, $this->allowed_post_types(), true ) || ! current_user_can( 'content.delete' === $name ? 'delete_post' : ( 'content.get' === $name ? 'read_post' : 'edit_post' ), $post->ID ) ) ) {
+				throw new \RuntimeException( __( 'この投稿を操作する権限がありません。', 'fourmix-intelligence' ) );
+			}
+			$type = get_post_type_object( $post ? $post->post_type : $this->allowed_post_type( $a['post_type'] ?? 'post' ) );
+			if ( ! $type || ( 'content.create' === $name && ! current_user_can( $type->cap->create_posts ) ) || ( 'publish' === ( $a['status'] ?? '' ) && ! current_user_can( $type->cap->publish_posts ) ) ) {
+				throw new \RuntimeException( __( 'この公開・作成操作は許可されていません。', 'fourmix-intelligence' ) );
+			}
+		}
+		if ( 'products.save' === $name && ! empty( $a['id'] ) && ! current_user_can( 'edit_post', $a['id'] ) ) {
+			throw new \RuntimeException( __( 'この商品を変更する権限がありません。', 'fourmix-intelligence' ) );
+		}
+	}
+
+	private function can_use( string $group ): bool {
+		$cap = array(
+			'content'  => 'edit_posts',
+			'media'    => 'upload_files',
+			'users'    => 'list_users',
+			'products' => 'edit_products',
+			'orders'   => 'manage_woocommerce',
+			'coupons'  => 'manage_woocommerce',
+		);
+		return isset( $cap[ $group ] ) && current_user_can( $cap[ $group ] );
+	}
+
+	public function perform( string $name, array $a ): mixed {
+		$this->validate_operation( $name, $a );
 		if ( 'content.list' === $name ) {
 			$type = $this->allowed_post_type( (string) ( $a['post_type'] ?? 'post' ) );
 			return array_map(
@@ -359,7 +438,7 @@ final class NativeBridgeController {
 					'status' => $p->post_status,
 					'url'    => get_permalink( $p ),
 				),
-				get_posts(
+				$this->readable_posts(
 					array(
 						'post_type'   => $type,
 						's'           => sanitize_text_field( $a['query'] ?? '' ),
@@ -415,7 +494,7 @@ final class NativeBridgeController {
 					'url'       => wp_get_attachment_url( $p->ID ),
 					'mime_type' => $p->post_mime_type,
 				),
-				get_posts(
+				$this->readable_posts(
 					array(
 						'post_type'   => 'attachment',
 						'post_status' => 'inherit',
@@ -463,10 +542,17 @@ final class NativeBridgeController {
 			$p = ! empty( $a['id'] ) ? wc_get_product( absint( $a['id'] ) ) : new \WC_Product_Simple();
 			if ( ! $p ) {
 				throw new \RuntimeException( __( '商品が見つかりません。', 'fourmix-intelligence' ) );
-			} foreach ( array( 'name', 'description', 'regular_price', 'stock_quantity', 'status' ) as $key ) {
+			}
+			if ( empty( $a['id'] ) ) {
+				$p->set_status( 'draft' );
+			}
+			foreach ( array( 'name', 'description', 'regular_price', 'stock_quantity', 'status' ) as $key ) {
 				if ( array_key_exists( $key, $a ) ) {
 					$method = 'set_' . $key;
-					$p->$method( 'stock_quantity' === $key ? max( 0, (int) $a[ $key ] ) : sanitize_text_field( (string) $a[ $key ] ) );
+					if ( 'stock_quantity' === $key ) {
+						$p->set_manage_stock( true );
+					}
+					$p->$method( 'stock_quantity' === $key ? max( 0, (int) $a[ $key ] ) : ( 'description' === $key ? wp_kses_post( $a[ $key ] ) : sanitize_text_field( (string) $a[ $key ] ) ) );
 				}
 			} return array( 'id' => $p->save() ); }
 		if ( 'orders.list' === $name ) {
@@ -567,6 +653,10 @@ final class NativeBridgeController {
 				throw new \RuntimeException( sprintf( __( '%s が範囲外です。', 'fourmix-intelligence' ), $key ) );
 			}
 		}
+	}
+
+	private function readable_posts( array $query ): array {
+		return array_values( array_filter( get_posts( $query ), static fn( $post ) => current_user_can( 'read_post', $post->ID ) ) );
 	}
 
 	/** @return list<string> */

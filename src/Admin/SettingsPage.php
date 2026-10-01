@@ -51,6 +51,8 @@ final class SettingsPage {
 			'url'               => esc_url_raw( (string) ( $input['url'] ?? 'https://mcp.ai.fourmix.co.jp' ) ),
 			'token'             => '' !== (string) ( $input['token'] ?? '' ) ? sanitize_text_field( (string) $input['token'] ) : (string) ( $current['token'] ?? '' ),
 			'agent'             => sanitize_key( (string) ( $input['agent'] ?? '' ) ),
+			'internal_agent'    => sanitize_key( (string) ( $input['internal_agent'] ?? '' ) ),
+			'bridge_user_id'    => absint( $input['bridge_user_id'] ?? 0 ),
 			'dataset'           => sanitize_text_field( (string) ( $input['dataset'] ?? '' ) ),
 			'sync_token'        => '' !== (string) ( $input['sync_token'] ?? '' ) ? sanitize_text_field( (string) $input['sync_token'] ) : (string) ( $current['sync_token'] ?? '' ),
 			'sync_enabled'      => ! empty( $input['sync_enabled'] ),
@@ -78,7 +80,30 @@ final class SettingsPage {
 		<table class="form-table" role="presentation">
 		<tr><th><label for="fmi-url"><?php esc_html_e( '接続先', 'fourmix-intelligence' ); ?></label></th><td><input class="regular-text" id="fmi-url" name="fourmix_intelligence_settings[url]" type="url" value="<?php echo esc_attr( $options['url'] ?? 'https://mcp.ai.fourmix.co.jp' ); ?>"></td></tr>
 		<tr><th><label for="fmi-token"><?php esc_html_e( '接続トークン', 'fourmix-intelligence' ); ?></label></th><td><input class="regular-text" id="fmi-token" name="fourmix_intelligence_settings[token]" type="password" autocomplete="new-password" value="" placeholder="<?php echo esc_attr( empty( $options['token'] ) ? __( '接続トークンを入力', 'fourmix-intelligence' ) : __( '設定済み（変更する場合のみ入力）', 'fourmix-intelligence' ) ); ?>"></td></tr>
-		<tr><th><label for="fmi-agent"><?php esc_html_e( '利用するAI', 'fourmix-intelligence' ); ?></label></th><td><input class="regular-text" id="fmi-agent" name="fourmix_intelligence_settings[agent]" value="<?php echo esc_attr( $options['agent'] ?? '' ); ?>"></td></tr>
+		<tr><th><label for="fmi-agent"><?php esc_html_e( 'お客様向けAI', 'fourmix-intelligence' ); ?></label></th><td><select id="fmi-agent" name="fourmix_intelligence_settings[agent]"><option value=""><?php esc_html_e( 'Studioで作成したAIを選択', 'fourmix-intelligence' ); ?></option>
+		<?php
+		try {
+			foreach ( ( new \FourmixIntelligence\WordPress\Http\Client() )->catalog( 'customer' ) as $agent ) {
+				printf( '<option value="%1$s" %2$s>%3$s</option>', esc_attr( $agent['name'] ), selected( $options['agent'] ?? '', $agent['name'], false ), esc_html( $agent['service_name'] ?? $agent['name'] ) );
+			}
+		} catch ( \Throwable $error ) {
+			echo '<option value="' . esc_attr( $options['agent'] ?? '' ) . '" selected>' . esc_html__( '接続後にAI一覧を取得します', 'fourmix-intelligence' ) . '</option>';
+		}
+		?>
+		</select><p class="description"><?php esc_html_e( 'AIはすべてFourmix IntelligenceのStudioで作成します。ここでは公開するAIだけを選びます。', 'fourmix-intelligence' ); ?></p></td></tr>
+		<tr><th><?php esc_html_e( '社内向けAI', 'fourmix-intelligence' ); ?></th><td><a href="<?php echo esc_url( admin_url( 'admin.php?page=fourmix-intelligence-operations' ) ); ?>"><?php esc_html_e( '運営支援画面でAIを選択', 'fourmix-intelligence' ); ?></a><p class="description"><?php esc_html_e( '本人が接続した後、Studioの社内向けAIから選択します。', 'fourmix-intelligence' ); ?></p></td></tr>
+		<tr><th><?php esc_html_e( '接続の実行ユーザー', 'fourmix-intelligence' ); ?></th><td>
+		<?php
+		wp_dropdown_users(
+			array(
+				'name'              => 'fourmix_intelligence_settings[bridge_user_id]',
+				'selected'          => $options['bridge_user_id'] ?? 0,
+				'show_option_none'  => __( '未設定（業務接続は停止）', 'fourmix-intelligence' ),
+				'option_none_value' => 0,
+			)
+		);
+		?>
+				<p class="description"><?php esc_html_e( '専用ユーザーのWordPress権限と、下記で選択した業務の両方を実行時に確認します。', 'fourmix-intelligence' ); ?></p></td></tr>
 		<tr><th><?php esc_html_e( '会話の続け方', 'fourmix-intelligence' ); ?></th><td><select name="fourmix_intelligence_settings[conversation_mode]"><option value="history" <?php selected( $options['conversation_mode'] ?? 'history', 'history' ); ?>><?php esc_html_e( 'ページを移動しても会話を続ける', 'fourmix-intelligence' ); ?></option><option value="temporary" <?php selected( $options['conversation_mode'] ?? '', 'temporary' ); ?>><?php esc_html_e( 'この画面を開いている間だけ続ける', 'fourmix-intelligence' ); ?></option></select></td></tr>
 		<tr><th><?php esc_html_e( '資料の自動同期', 'fourmix-intelligence' ); ?></th><td><label><input type="checkbox" name="fourmix_intelligence_settings[sync_enabled]" value="1" <?php checked( ! empty( $options['sync_enabled'] ) ); ?>> <?php esc_html_e( '公開内容の変更を資料庫へ自動同期する', 'fourmix-intelligence' ); ?></label><p class="description"><?php esc_html_e( '有効にするまで資料は送信されません。', 'fourmix-intelligence' ); ?></p></td></tr>
 		<tr><th><label for="fmi-dataset"><?php esc_html_e( '資料庫ID', 'fourmix-intelligence' ); ?></label></th><td><input class="regular-text" id="fmi-dataset" name="fourmix_intelligence_settings[dataset]" value="<?php echo esc_attr( $options['dataset'] ?? '' ); ?>"></td></tr>

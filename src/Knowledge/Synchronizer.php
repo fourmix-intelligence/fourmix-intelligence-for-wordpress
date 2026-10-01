@@ -12,10 +12,10 @@ final class Synchronizer {
 		add_action( 'fourmix_intelligence_process_sync', array( $this, 'process' ) );
 	}
 	public function saved( int $post_id, \WP_Post $post ): void {
-		if ( ! Options::get( 'sync_enabled', false ) || wp_is_post_revision( $post_id ) || 'publish' !== $post->post_status || ! in_array( $post->post_type, (array) Options::get( 'sync_post_types', array( 'post', 'page', 'product' ) ), true ) ) {
+		if ( ! Options::get( 'sync_enabled', false ) || wp_is_post_revision( $post_id ) || ! in_array( $post->post_type, (array) Options::get( 'sync_post_types', array( 'post', 'page', 'product' ) ), true ) ) {
 			return;
 		}
-		$this->enqueue( $post->post_type, $post_id, 'replace', max( 1, strtotime( $post->post_modified_gmt . ' UTC' ) ) );
+		$this->enqueue( $post->post_type, $post_id, $this->public_content( $post ) ? 'replace' : 'delete', max( 1, strtotime( $post->post_modified_gmt . ' UTC' ) ) );
 	}
 	public function deleted( int $post_id ): void {
 		if ( ! Options::get( 'sync_enabled', false ) ) {
@@ -91,7 +91,7 @@ final class Synchronizer {
 			return $record;
 		}
 		$post = get_post( (int) $row['object_id'] );
-		if ( ! $post ) {
+		if ( ! $post || ! $this->public_content( $post ) ) {
 			$record['operation'] = 'delete';
 			return $record; }
 		$parts = array( '# ' . get_the_title( $post ), 'URL: ' . get_permalink( $post ), wp_strip_all_tags( strip_shortcodes( $post->post_content ) ) );
@@ -103,5 +103,16 @@ final class Synchronizer {
 		}
 		$record['text'] = implode( "\n\n", array_filter( $parts ) );
 		return $record;
+	}
+
+	private function public_content( \WP_Post $post ): bool {
+		if ( 'publish' !== $post->post_status || '' !== $post->post_password || ! is_post_type_viewable( $post->post_type ) ) {
+			return false;
+		}
+		if ( 'product' === $post->post_type && function_exists( 'wc_get_product' ) ) {
+			$product = wc_get_product( $post->ID );
+			return $product && 'hidden' !== $product->get_catalog_visibility();
+		}
+		return true;
 	}
 }

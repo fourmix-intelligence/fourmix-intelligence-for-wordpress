@@ -20,4 +20,4 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - run: node --check assets/editor.js && node --check assets/view.js
+      - run: node --check assets/editor.js && node --check assets/view.js && node --check assets/admin.js

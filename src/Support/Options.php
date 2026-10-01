@@ -21,4 +21,8 @@ final class Options {
 	}
 	public static function enabled(): bool {
 		return '' !== self::get( 'token', '' ) && '' !== self::get( 'agent', '' ); }
+
+	public static function public_agent(): string {
+		return (string) self::get( 'agent', '' );
+	}
 }

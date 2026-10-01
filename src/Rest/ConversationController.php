@@ -55,8 +55,14 @@ final class ConversationController {
 		);
 		$this->continue_conversation( $request, $body );
 		try {
+			$this->require_customer_agent();
 			$response = ( new Client() )->post( '/api/v3/ai/plugins/' . Options::get( 'agent' ) . '/runs', $body );
-			$this->hydrate_products( $response );
+			$kind     = $body['options']['page']['kind'];
+			if ( in_array( $kind, array( 'product-recommendation', 'frequently-bought-together', 'cart-assistant' ), true ) ) {
+				$this->hydrate_products( $response );
+			} else {
+				$this->hydrate_content( $response );
+			}
 			return new WP_REST_Response( $response, 200 );
 		} catch ( \Throwable $e ) {
 			return new WP_REST_Response( array( 'message' => 'ただいまご案内を準備できません。時間をおいてお試しください。' ), 502 ); }
@@ -78,8 +84,16 @@ final class ConversationController {
 			$body['before_id'] = absint( $request->get_param( 'before_id' ) );
 		}
 		try {
+			$this->require_customer_agent();
 			return new WP_REST_Response( ( new Client() )->post( '/api/v3/ai/plugins/' . Options::get( 'agent' ) . '/customer-history', $body ), 200 ); } catch ( \Throwable $e ) {
 			return new WP_REST_Response( array( 'message' => '会話履歴を読み込めませんでした。' ), 502 ); }
+	}
+
+	private function require_customer_agent(): void {
+		$manifest = ( new Client() )->request( 'GET', '/api/v3/ai/plugins/' . rawurlencode( Options::public_agent() ) . '/metadata' );
+		if ( 'customer' !== ( $manifest['audience'] ?? '' ) ) {
+			throw new \RuntimeException( esc_html__( 'お客様向けAIを選択してください。', 'fourmix-intelligence' ) );
+		}
 	}
 
 	private function access_error( WP_REST_Request $request ): ?WP_REST_Response {
@@ -150,7 +164,7 @@ final class ConversationController {
 				$id = absint( wc_get_product_id_by_sku( sanitize_text_field( (string) $item['sku'] ) ) );
 			}
 			$product = $id ? wc_get_product( $id ) : false;
-			if ( ! $product || ! $product->is_visible() ) {
+			if ( ! $product || 'publish' !== $product->get_status() || ! $product->is_visible() || post_password_required( $product->get_id() ) ) {
 				continue;
 			}
 			$verified[] = array_merge(
@@ -163,6 +177,26 @@ final class ConversationController {
 					'in_stock'    => $product->is_in_stock(),
 					'purchasable' => $product->is_purchasable() && $product->is_in_stock(),
 				)
+			);
+		}
+		$response['result']['data']['items'] = $verified;
+	}
+
+	private function hydrate_content( array &$response ): void {
+		if ( ! isset( $response['result']['data']['items'] ) || ! is_array( $response['result']['data']['items'] ) ) {
+			return;
+		}
+		$verified = array();
+		foreach ( array_slice( $response['result']['data']['items'], 0, 12 ) as $item ) {
+			$post = is_array( $item ) ? get_post( absint( $item['post_id'] ?? $item['id'] ?? 0 ) ) : null;
+			if ( ! $post || 'publish' !== $post->post_status || post_password_required( $post ) || ! is_post_type_viewable( $post->post_type ) ) {
+				continue;
+			}
+			$verified[] = array(
+				'post_id'     => $post->ID,
+				'name'        => get_the_title( $post ),
+				'product_url' => get_permalink( $post ),
+				'reason'      => sanitize_text_field( (string) ( $item['reason'] ?? '' ) ),
 			);
 		}
 		$response['result']['data']['items'] = $verified;

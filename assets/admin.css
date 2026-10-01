@@ -1,0 +1,4 @@
+#fmi-operations [hidden] { display: none !important; }
+#fmi-operations .fmi-token-row { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin: 12px 0 20px; }
+#fmi-operations .fmi-token-row input { max-width: 100%; }
+#fmi-operations .button { margin-bottom: 8px; }

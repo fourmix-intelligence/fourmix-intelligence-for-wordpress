@@ -11,7 +11,7 @@
   },
   "scripts": {
     "lint": "phpcs",
-    "test": ["@lint", "@php tests/public-request-guard.php"]
+    "test": ["@lint", "@php tests/public-request-guard.php", "@php tests/execution-journal.php"]
   },
   "config": {"allow-plugins": {"dealerdirect/phpcodesniffer-composer-installer": true}, "sort-packages": true}
 }
