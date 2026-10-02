@@ -11,6 +11,7 @@
   };
   Object.keys(definitions).forEach(function (kind) {
     blocks.registerBlockType('fourmix-intelligence/' + kind, {
+      icon: el('img', {src: window.FourmixIntelligenceBrand.icon, alt: '', width: 24, height: 24}),
       edit: function (props) {
         const attrs = props.attributes;
         return el('div', blockEditor.useBlockProps({className: 'fmi-editor'}),
@@ -18,7 +19,7 @@
             el(components.TextControl, {label: __('見出し', 'fourmix-intelligence'), value: attrs.title || definitions[kind][0], onChange: function(v){props.setAttributes({title:v});}}),
             el(components.ToggleControl, {label: __('ページ表示時に自動で案内する', 'fourmix-intelligence'), checked: !!attrs.automatic, onChange: function(v){props.setAttributes({automatic:v});}})
           )),
-          el('span', {className: 'fmi-editor__mark'}, '✦'), el('div', {}, el('strong', {}, attrs.title || definitions[kind][0]), el('p', {}, definitions[kind][1]))
+          el('img', {className: 'fmi-brand-icon', src: window.FourmixIntelligenceBrand.icon, alt: 'Fourmix Intelligence', width: 40, height: 40}), el('div', {}, el('strong', {}, attrs.title || definitions[kind][0]), el('p', {}, definitions[kind][1]))
         );
       },
       save: function () { return null; }

@@ -28,8 +28,17 @@ try {
 	$second = array_merge( $base, array( 'request_id' => $key(), 'message' => '合成契約二回目', 'include_context' => true ) );
 	$request( 'staff/chat', $second ); $body = get_option( 'fmi_chat_ui_fixture' )['last_body'];
 	$check( $first['conversation_id'] === $body['conversation_id'], '複数ターンで同じ会話' );
-	$check( $fixture['posts']['draft'] === $body['options']['native_context']['record']['id'], '勾選時だけ自分の投稿情報' );
+	$check( $fixture['posts']['draft'] === $body['options']['native_context']['record']['id'], '選択時だけ自分の投稿情報' );
 	$check( ! isset( $body['options']['native_context']['record']['content'] ), '本文は送らない' );
+	$screen = array_merge( $base, array( 'request_id' => $key(), 'message' => '合成一覧の画面情報', 'post_id' => 0, 'include_context' => true, 'screen' => '<script>edit-post</script>' . str_repeat( 'x', 100 ), 'screen_title' => '<b>投稿一覧</b>' . str_repeat( '長', 150 ) ) );
+	$check( 200 === $request( 'staff/chat', $screen )->get_status(), '投稿がない一覧画面の文脈を許可' );
+	$native = get_option( 'fmi_chat_ui_fixture' )['last_body']['options']['native_context'];
+	$check( ! isset( $native['record'] ) && ! isset( $native['rows'] ), '一覧の業務データを送らない' );
+	$check( strlen( $native['screen']['id'] ) <= 80 && ! str_contains( $native['screen']['id'], '<' ), '画面IDは文字種と長さを制限' );
+	$check( mb_strlen( $native['screen']['title'] ) <= 120 && ! str_contains( $native['screen']['title'], '<' ), '画面名はHTMLと長さを制限' );
+	$request( 'staff/chat', array_merge( $screen, array( 'request_id' => $key(), 'message' => '合成画面情報を送らない', 'include_context' => false ) ) );
+	$check( ! isset( get_option( 'fmi_chat_ui_fixture' )['last_body']['options']['native_context']['screen'] ), '未選択では画面名も送らない' );
+	$check( 502 === $request( 'staff/chat', array_merge( $screen, array( 'request_id' => $key(), 'post_id' => PHP_INT_MAX ) ) )->get_status(), '参照できない対象指定を一覧文脈へ格下げしない' );
 	$tool = $request( 'staff/chat', array_merge( $base, array( 'request_id' => $key(), 'message' => '合成操作契約' ) ) )->get_data();
 	$id = $tool['result']['data']['tool_result']['id']; $action = array( 'agent' => 'synthetic-internal', 'thread_id' => $session['thread_id'], 'id' => $id );
 	$check( 'confirmation_required' === $request( 'staff/action', $action )->get_data()['status'], '会話に紐づく正式プレビュー' );
@@ -63,6 +72,7 @@ try {
 	$public = array( 'message' => '合成公開契約', 'request_id' => $key(), 'context' => array( 'kind' => 'ai-concierge' ), 'agent' => 'synthetic-internal' );
 	$answer = $request( 'chat', $public )->get_data();
 	$check( isset( $answer['conversation_id'] ) && ! isset( $answer['customer_token'] ), '会話専用トークンをブラウザーへ渡さない' );
+	$check( ! preg_match( '/synthetic-(?:nested-secret|run-ticket|deeper-secret|authorization)/', wp_json_encode( $answer ) ), 'JSON互換経路の入れ子イベントからも秘密情報を除外' );
 	$check( $answer === $request( 'chat', $public )->get_data(), '公開送信の重複防止' );
 	$check( isset( $request( 'history', array( 'conversation_id' => $answer['conversation_id'] ) )->get_data()['messages'] ), '同じ訪問者の履歴' );
 	$_COOKIE['fourmix_intelligence_visitor'] = str_repeat( 'b', 64 );

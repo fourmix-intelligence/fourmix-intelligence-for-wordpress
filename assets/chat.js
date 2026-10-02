@@ -9,6 +9,7 @@
     return [...new Set(own.concat(...Object.values(value).map((item) => actionIds(item, depth + 1))))];
   };
   function content(target, text) {
+    if (window.FourmixIntelligenceAnswer?.render) { window.FourmixIntelligenceAnswer.render(target, text); return; }
     // HTMLは解釈せず、段落・見出し・コードだけをDOMとして組み立てます。
     let code = null;
     String(text || '').split('\n').forEach((line) => {
@@ -24,7 +25,8 @@
     const key = 'fourmix_intelligence_chat_v3_' + options.scope;
     try { const prior = JSON.parse(sessionStorage.getItem(key) || 'null'); if (prior && Date.now() - prior.at < (options.ttl || 900000) && (!options.thread_id || prior.thread_id === options.thread_id)) state = prior; } catch (_) {}
     const save = () => { try { sessionStorage.setItem(key, JSON.stringify({...state, at: Date.now()})); } catch (_) {} };
-    let controller = null, generation = 0, busy = false, disposed = false;
+    let controller = null, generation = 0, busy = false, disposed = false, attachments = null, renderTimer = null, visibleCount = 40;
+    const messageNodes = new Map();
     host.replaceChildren(); host.classList.add('fmi-chat');
     const toolbar = node('div', 'fmi-chat__toolbar');
     toolbar.append(node('span', 'fmi-chat__label', options.label || __('AIとの相談')));
@@ -42,8 +44,12 @@
     const stop = button(__('受信を停止')); stop.hidden = true;
     const send = button(__('送信')); send.type = 'submit'; send.classList.add('fmi-chat__button--primary'); controls.append(hint, stop, send); form.append(label, controls);
     host.append(toolbar, log, status, recover, form);
+    if (options.attachments) attachments = window.FourmixIntelligenceAttachments?.mount(form, {...options.attachments, scope: options.scope, ttl: options.ttl,
+      identity: () => ({...(options.attachments.identity?.() || {}), conversation_id: state.conversation_id, thread_id: state.thread_id}),
+      onConversation: (id) => { state.conversation_id = id; save(); }, onChange: () => activity(busy)});
+    if (attachments) input.required = false;
     function say(text) { status.textContent = text; }
-    function activity(value) { busy = value; send.disabled = value || !!state.pending; input.disabled = value; fresh.disabled = value; history.disabled = value; stop.hidden = !value; host.setAttribute('aria-busy', String(value)); }
+    function activity(value) { busy = value; send.disabled = value || !!state.pending || !!attachments?.hasBlocking(); input.disabled = value; fresh.disabled = value; history.disabled = value; stop.hidden = !value; attachments?.setBusy(value); host.setAttribute('aria-busy', String(value)); }
     function scroll() { log.scrollTop = log.scrollHeight; }
     function tool(target, id) {
       const card = node('section', 'fmi-chat__tool'); card.dataset.actionId = id;
@@ -85,36 +91,67 @@
       load();
     }
     function message(item) {
+      if (messageNodes.has(item)) { log.append(messageNodes.get(item)); return; }
       const article = node('article', 'fmi-chat__message fmi-chat__message--' + (item.role === 'user' ? 'user' : 'assistant'));
       article.append(node('span', 'fmi-chat__speaker', item.role === 'user' ? __('あなた') : options.label || __('AI')));
-      const body = node('div', 'fmi-chat__content'); content(body, item.content); article.append(body);
+      const body = node('div', 'fmi-chat__content'); if (window.FourmixIntelligenceAnswer?.render) window.FourmixIntelligenceAnswer.render(body, item.content, !!item.streaming); else content(body, item.content); article.append(body);
       if (item.context) article.append(node('small', 'fmi-chat__hint', item.context));
+      attachments?.drawMessage(body, item.attachments);
+      if (!item.streaming && item.role === 'assistant' && item.follow_up_questions) {
+        const questions = node('div', 'fmi-chat__follow-ups');
+        item.follow_up_questions.slice(0, 5).forEach((item) => { const prompt = typeof item === 'string' ? item : item.prompt; if (!prompt) return; const choice = button(prompt); choice.addEventListener('click', () => { if (!busy && !state.pending) { input.value = prompt; input.focus(); } }); questions.append(choice); }); article.append(questions);
+      }
       if (options.decorate && item.data) options.decorate(body, item.data);
       if (options.tools) (item.actions || []).forEach((id) => tool(body, id));
-      log.append(article);
+      messageNodes.set(item, article); log.append(article);
     }
-    function redraw() { log.replaceChildren(); if (!state.messages.length) log.append(node('p', 'fmi-chat__empty', options.welcome || __('ここからAIに相談できます。操作が必要な場合は、内容を確認してから実行します。'))); else state.messages.forEach(message); scroll(); }
+    function redraw() {
+      const position = log.scrollTop, visible = state.messages.slice(-visibleCount), retained = new Set(visible);
+      messageNodes.forEach((value, item) => { if (!retained.has(item)) messageNodes.delete(item); }); log.replaceChildren();
+      if (!state.messages.length) log.append(node('p', 'fmi-chat__empty', options.welcome || __('ここからAIに相談できます。操作が必要な場合は、内容を確認してから実行します。')));
+      if (state.messages.length > visibleCount) { const older = button(__('以前のメッセージを表示')); older.addEventListener('click', () => { const height = log.scrollHeight; follow = false; visibleCount += 40; redraw(); log.scrollTop += log.scrollHeight - height; }); log.append(older); }
+      visible.forEach(message); if (follow) scroll(); else log.scrollTop = position;
+    }
+    function renderPartial() {
+      const item = state.messages.at(-1); if (!item?.streaming) return;
+      if (!messageNodes.has(item)) redraw();
+      else { const body = messageNodes.get(item).querySelector('.fmi-chat__content'); window.FourmixIntelligenceAnswer.render(body, item.content, true); if (follow) scroll(); }
+    }
     function finish(payload) {
+      clearTimeout(renderTimer); renderTimer = null;
       if (payload.state === 'unknown_effect') { unknown(); return; }
       state.conversation_id = payload.conversation_id || state.conversation_id;
       const answer = payload.result?.answer || payload.answer || __('応答を受け取りました。内容をご確認ください。');
-      state.messages.push({role: 'assistant', content: answer, data: payload.result?.data, actions: options.tools ? actionIds(payload) : []});
-      state.pending = null; save(); recover.hidden = true; retry.hidden = true; redraw(); say(__('応答を受け取りました。')); activity(false); input.focus();
+      const partial = state.messages.at(-1); const message = {role: 'assistant', content: answer, data: payload.result?.data, follow_up_questions: payload.result?.follow_up_questions, actions: options.tools ? actionIds(payload) : []};
+      if (partial?.role === 'assistant' && partial.streaming) state.messages[state.messages.length - 1] = message; else state.messages.push(message);
+      state.pending = null; save(); recover.hidden = true; retry.hidden = true; redraw(); say(__('応答を受け取りました。')); activity(false); if (input.getClientRects().length) input.focus();
     }
-    function unknown() { recover.hidden = false; retry.hidden = true; say(__('受信を完了できませんでした。処理が続いている可能性があります。再送せず、送信結果を確認してください。')); activity(false); }
+    function unknown() { clearTimeout(renderTimer); renderTimer = null; renderPartial(); save(); recover.hidden = false; retry.hidden = true; say(__('受信を完了できませんでした。処理が続いている可能性があります。再送せず、送信結果を確認してください。')); activity(false); }
     async function transmit() {
       if (!state.pending || busy || disposed) return;
       const turn = ++generation; controller = new AbortController(); activity(true); recover.hidden = true; say(__('応答を待っています…'));
       const timeout = setTimeout(() => controller?.abort(), 185000);
-      try { const data = await options.request('chat', state.pending, controller.signal); if (turn === generation && !disposed) finish(data); }
+      const receive = (event) => {
+        if (turn !== generation || disposed) return;
+        if (event.type === 'run.created' && event.data.conversation_id) { state.conversation_id = event.data.conversation_id; save(); }
+        if (['assistant.delta', 'assistant.message'].includes(event.type)) {
+          let item = state.messages.at(-1);
+          if (item?.role !== 'assistant' || !item.streaming) { item = {role: 'assistant', content: '', streaming: true}; state.messages.push(item); }
+          item.content = event.type === 'assistant.message' ? event.data.text || '' : item.content + (event.data.text || ''); if (!renderTimer) renderTimer = setTimeout(() => { renderTimer = null; if (!disposed) { renderPartial(); save(); } }, 120);
+        } else if (['status', 'run.status', 'tool.started', 'tool.completed', 'tool.failed', 'planner.plan', 'planner.replan'].includes(event.type)) {
+          const labels = {'tool.started': __('業務の内容を確認しています…'), 'tool.completed': __('操作結果を確認しました。'), 'tool.failed': __('操作結果を確認できませんでした。'), 'planner.plan': __('進め方を整理しています…'), 'planner.replan': __('進め方を見直しています…')}; say(labels[event.type] || event.data.message || __('回答を準備しています…'));
+        }
+      };
+      try { const data = await (options.stream ? options.stream(state.pending, controller.signal, receive) : options.request('chat', state.pending, controller.signal)); if (turn === generation && !disposed) finish(data); }
       catch (error) { if (turn === generation && !disposed) { unknown(); if (error.name !== 'AbortError') say(error.message + ' ' + __('送信結果を確認してから再開してください。')); } }
       finally { clearTimeout(timeout); if (turn === generation && !disposed) { controller = null; activity(false); } }
     }
     form.addEventListener('submit', (event) => {
-      event.preventDefault(); if (busy || state.pending || !input.value.trim()) return;
+      event.preventDefault(); if (busy || state.pending || attachments?.hasBlocking() || (!input.value.trim() && !attachments?.readyCount())) return;
       const extra = options.context ? options.context() : {};
-      state.pending = {...extra, message: input.value.trim(), request_id: Date.now() + ':' + crypto.randomUUID(), thread_id: state.thread_id, conversation_id: state.conversation_id};
-      state.messages.push({role: 'user', content: input.value.trim(), context: options.contextLabel ? options.contextLabel(extra) : ''}); input.value = ''; save(); redraw(); transmit();
+      const files = attachments?.consume() || [], text = input.value.trim() || __('添付したファイルについて確認してください。');
+      state.pending = {...extra, message: text, attachment_ids: files.map((item) => item.id), request_id: Date.now() + ':' + crypto.randomUUID(), thread_id: state.thread_id, conversation_id: state.conversation_id};
+      state.messages.push({role: 'user', content: text, attachments: files, context: options.contextLabel ? options.contextLabel(extra) : ''}); input.value = ''; follow = true; save(); redraw(); transmit();
     });
     input.addEventListener('keydown', (event) => { if (event.key === 'Enter' && (event.ctrlKey || event.metaKey) && !event.isComposing) { event.preventDefault(); form.requestSubmit(); } });
     stop.addEventListener('click', () => { ++generation; controller?.abort(); controller = null; unknown(); say(__('受信を停止しました。サーバー側の処理は取り消されていません。送信結果を確認してください。')); });
@@ -128,7 +165,7 @@
       if (busy) return;
       if ((state.messages.length || state.pending) && !window.confirm(__('新しい相談を始めますか？ 前の処理や確認待ちの操作は取り消されません。'))) return;
       fresh.disabled = true;
-      try { const data = options.newConversation ? await options.newConversation() : {}; state = {messages: [], pending: null, conversation_id: '', thread_id: data.thread_id || ''}; save(); recover.hidden = true; redraw(); activity(false); say(__('新しい相談を始められます。')); input.focus(); } catch (error) { say(error.message); } finally { fresh.disabled = false; }
+      try { await attachments?.reset(); const data = options.newConversation ? await options.newConversation() : {}; state = {messages: [], pending: null, conversation_id: '', thread_id: data.thread_id || ''}; visibleCount = 40; save(); recover.hidden = true; redraw(); activity(false); say(__('新しい相談を始められます。')); input.focus(); } catch (error) { say(error.message); } finally { fresh.disabled = false; }
     });
     history.addEventListener('click', async () => {
       if (!state.conversation_id || busy || state.pending) { say(__('送信結果を確認した会話の履歴を読み込めます。')); return; }
@@ -144,7 +181,20 @@
     window.addEventListener('pagehide', leave);
     window.addEventListener('pageshow', resume);
     redraw(); activity(false); if (state.pending) unknown();
-    return {dispose() { disposed = true; ++generation; controller?.abort(); window.removeEventListener('pagehide', leave); window.removeEventListener('pageshow', resume); window.removeEventListener('resize', resize); }, input};
+    return {dispose() { disposed = true; ++generation; controller?.abort(); attachments?.dispose(); clearTimeout(renderTimer); messageNodes.clear(); save(); window.removeEventListener('pagehide', leave); window.removeEventListener('pageshow', resume); window.removeEventListener('resize', resize); }, input};
   }
-  window.FourmixIntelligenceChat = {mount, content};
+  async function stream(endpoint, init, signal, onEvent) {
+    const reply = await fetch(endpoint, {...init, signal});
+    if (!reply.ok) { const value = await reply.json(); const error = new Error(value.message || __('接続と権限を確認してください。')); error.status = reply.status; error.code = value.code; throw error; }
+    if (!reply.headers.get('Content-Type')?.includes('application/x-ndjson') || !reply.body) throw new Error(__('逐次応答を受信できませんでした。'));
+    const reader = reply.body.getReader(), decoder = new TextDecoder(); let buffer = '', completed = null, received = 0;
+    function line(value) {
+      if (!value.trim()) return; const event = JSON.parse(value); if (!event || typeof event.type !== 'string' || !event.data) throw new Error(__('応答の形式を確認できませんでした。'));
+      if (event.type === 'run.failed') { const error = new Error(event.data.message || __('結果を確認できませんでした。')); error.status = event.data.status_code; throw error; }
+      onEvent(event); if (event.type === 'run.completed') completed = event.data.response;
+    }
+    try { while (true) { const {value, done} = await reader.read(); received += value?.byteLength || 0; if (received > 2 * 1024 * 1024) throw new Error(__('応答が大きすぎます。送信結果を確認してください。')); buffer += decoder.decode(value || new Uint8Array(), {stream: !done}); const lines = buffer.split('\n'); buffer = lines.pop() || ''; lines.forEach(line); if (done) break; } line(buffer); if (!completed) throw new Error(__('応答が途中で切れました。送信結果を確認してください。')); return completed; }
+    finally { await reader.cancel().catch(() => {}); reader.releaseLock(); }
+  }
+  window.FourmixIntelligenceChat = {mount, content, stream};
 })();

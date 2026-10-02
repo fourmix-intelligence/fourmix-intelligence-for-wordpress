@@ -1,0 +1,49 @@
+{
+  "environment": "本機Edge 1365x1000・WordPress 7.1/PHP8.3・キャッシュ無効。80件の合成履歴、201イベントを約4ms間隔で受信するブラウザー内測定。実モデル・本番負荷・CPU固定・強制GCは未実施。",
+  "mode": "after",
+  "closed": {
+    "files": [
+      "chat.css?ver=2.0.0-dev",
+      "answer.css?ver=2.0.0-dev",
+      "attachments.css?ver=2.0.0-dev",
+      "admin.css?ver=2.0.0-dev",
+      "dock.css?ver=2.0.0-dev",
+      "brand/fourmix-intelligence-icon.png",
+      "staff-chat.js?ver=2.0.0-dev"
+    ],
+    "decodedBytes": 919375,
+    "heavyweightScripts": 0,
+    "apiRequests": 0
+  },
+  "opened": {
+    "mermaidLoaded": false,
+    "chatLoaded": true
+  },
+  "benchmark": {
+    "initial": {
+      "renderMs": 136.09999999403954,
+      "messageDom": 40,
+      "elementDom": 416
+    },
+    "streamed": {
+      "eventCount": 201,
+      "renderCalls": 9,
+      "parseMs": 16.50000001490116,
+      "elapsedMs": 1127.5,
+      "messageDom": 40,
+      "elementDom": 1015,
+      "tableRows": 200
+    },
+    "historyExpansion": {
+      "messageDom": 82,
+      "includesOldest": true
+    },
+    "lifecycle": {
+      "mounts": 20,
+      "added": 60,
+      "removed": 60
+    },
+    "heapBytesAtEnd": 31630396
+  },
+  "errors": []
+}

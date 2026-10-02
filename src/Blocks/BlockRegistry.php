@@ -10,25 +10,28 @@ final class BlockRegistry {
 		add_action( 'init', array( $this, 'blocks' ) ); }
 	public function blocks(): void {
 		add_shortcode( 'fourmix_intelligence_chat', array( $this, 'shortcode' ) );
-		wp_register_script( 'fourmix-intelligence-chat', FOURMIX_INTELLIGENCE_URL . 'assets/chat.js', array( 'wp-i18n' ), FOURMIX_INTELLIGENCE_VERSION, true );
+		\FourmixIntelligence\WordPress\Support\ChatAssets::register();
 		wp_set_script_translations( 'fourmix-intelligence-chat', 'fourmix-intelligence' );
 		wp_register_style( 'fourmix-intelligence-chat', FOURMIX_INTELLIGENCE_URL . 'assets/chat.css', array(), FOURMIX_INTELLIGENCE_VERSION );
 		wp_register_script( 'fourmix-intelligence-editor', FOURMIX_INTELLIGENCE_URL . 'assets/editor.js', array( 'wp-blocks', 'wp-element', 'wp-i18n', 'wp-block-editor', 'wp-components' ), FOURMIX_INTELLIGENCE_VERSION, true );
+		wp_localize_script( 'fourmix-intelligence-editor', 'FourmixIntelligenceBrand', array( 'icon' => FOURMIX_INTELLIGENCE_URL . 'assets/brand/fourmix-intelligence-icon.png' ) );
 		wp_register_script( 'fourmix-intelligence-view', FOURMIX_INTELLIGENCE_URL . 'assets/view.js', array( 'fourmix-intelligence-chat' ), FOURMIX_INTELLIGENCE_VERSION, true );
 		wp_set_script_translations( 'fourmix-intelligence-view', 'fourmix-intelligence' );
-		wp_register_style( 'fourmix-intelligence-blocks', FOURMIX_INTELLIGENCE_URL . 'assets/blocks.css', array( 'fourmix-intelligence-chat' ), FOURMIX_INTELLIGENCE_VERSION );
+		wp_register_style( 'fourmix-intelligence-blocks', FOURMIX_INTELLIGENCE_URL . 'assets/blocks.css', array( 'fourmix-intelligence-attachments' ), FOURMIX_INTELLIGENCE_VERSION );
 		wp_localize_script(
 			'fourmix-intelligence-view',
 			'FourmixIntelligenceSettings',
 			array(
-				'endpoint'          => esc_url_raw( rest_url( 'fourmix-intelligence/v1/chat' ) ),
-				'historyEndpoint'   => esc_url_raw( rest_url( 'fourmix-intelligence/v1/history' ) ),
-				'sessionEndpoint'   => esc_url_raw( rest_url( 'fourmix-intelligence/v1/public/session' ) ),
-				'statusEndpoint'    => esc_url_raw( rest_url( 'fourmix-intelligence/v1/public/run_status' ) ),
-				'conversationMode'  => Options::get( 'conversation_mode', 'history' ),
-				'enabled'           => Options::enabled(),
-				'agent'             => Options::public_agent(),
-				'addToCartEndpoint' => class_exists( 'WooCommerce' ) ? esc_url_raw( \WC_AJAX::get_endpoint( 'add_to_cart' ) ) : '',
+				'endpoint'           => esc_url_raw( rest_url( 'fourmix-intelligence/v1/chat' ) ),
+				'streamEndpoint'     => esc_url_raw( rest_url( 'fourmix-intelligence/v1/chat_stream' ) ),
+				'historyEndpoint'    => esc_url_raw( rest_url( 'fourmix-intelligence/v1/history' ) ),
+				'sessionEndpoint'    => esc_url_raw( rest_url( 'fourmix-intelligence/v1/public/session' ) ),
+				'statusEndpoint'     => esc_url_raw( rest_url( 'fourmix-intelligence/v1/public/run_status' ) ),
+				'attachmentEndpoint' => esc_url_raw( rest_url( 'fourmix-intelligence/v1/public/' ) ),
+				'conversationMode'   => Options::get( 'conversation_mode', 'history' ),
+				'enabled'            => Options::enabled(),
+				'agent'              => Options::public_agent(),
+				'addToCartEndpoint'  => class_exists( 'WooCommerce' ) ? esc_url_raw( \WC_AJAX::get_endpoint( 'add_to_cart' ) ) : '',
 			)
 		);
 		foreach ( self::BLOCKS as $block ) {
@@ -48,7 +51,7 @@ final class BlockRegistry {
 		wp_enqueue_script( 'fourmix-intelligence-view' );
 		wp_enqueue_style( 'fourmix-intelligence-blocks' );
 		$attributes = shortcode_atts( array( 'title' => __( 'AIに相談', 'fourmix-intelligence' ) ), $attributes, 'fourmix_intelligence_chat' );
-		return sprintf( '<section class="fmi-block fmi-block--ai-concierge" data-fmi-kind="ai-concierge" data-fmi-auto="0"><div class="fmi-block__header"><h2>%s</h2></div><div class="fmi-block__body"></div></section>', esc_html( $attributes['title'] ) );
+		return sprintf( '<section class="fmi-block fmi-block--ai-concierge" data-fmi-kind="ai-concierge" data-fmi-auto="0"><div class="fmi-block__header">%1$s<h2>%2$s</h2></div><div class="fmi-block__body"></div></section>', $this->brand_icon(), esc_html( $attributes['title'] ) );
 	}
 
 	public function render( array $attributes, string $content, \WP_Block $block ): string {
@@ -65,7 +68,10 @@ final class BlockRegistry {
 				'data-fmi-auto' => $auto ? '1' : '0',
 			)
 		);
-		return sprintf( '<section %1$s><div class="fmi-block__header"><h2>%2$s</h2></div><div class="fmi-block__body" aria-live="polite"></div></section>', $wrapper, esc_html( $title ) );
+		return sprintf( '<section %1$s><div class="fmi-block__header">%2$s<h2>%3$s</h2></div><div class="fmi-block__body" aria-live="polite"></div></section>', $wrapper, $this->brand_icon(), esc_html( $title ) );
+	}
+	private function brand_icon(): string {
+		return '<img class="fmi-brand-icon" src="' . esc_url( FOURMIX_INTELLIGENCE_URL . 'assets/brand/fourmix-intelligence-icon.png' ) . '" alt="Fourmix Intelligence" width="32" height="32">';
 	}
 	private function title( string $kind ): string {
 		return array(

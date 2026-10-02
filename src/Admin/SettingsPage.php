@@ -87,7 +87,7 @@ final class SettingsPage {
 		$options    = (array) get_option( 'fourmix_intelligence_settings', array() );
 		$post_types = get_post_types( array( 'public' => true ), 'objects' );
 		?>
-		<div class="wrap"><h1><?php esc_html_e( 'Fourmix Intelligence 連携設定', 'fourmix-intelligence' ); ?></h1>
+		<div class="wrap"><h1 class="fmi-brand-heading"><img src="<?php echo esc_url( FOURMIX_INTELLIGENCE_URL . 'assets/brand/fourmix-intelligence-icon.png' ); ?>" alt="" width="36" height="36"><?php esc_html_e( 'Fourmix Intelligence 連携設定', 'fourmix-intelligence' ); ?></h1>
 		<p><?php esc_html_e( 'サイトの案内、AI接客、コンテンツ同期を一つの設定で管理します。秘密情報はブラウザーへ公開されません。', 'fourmix-intelligence' ); ?></p>
 		<form action="options.php" method="post"><?php settings_fields( 'fourmix_intelligence' ); ?>
 		<table class="form-table" role="presentation">
@@ -104,7 +104,7 @@ final class SettingsPage {
 		}
 		?>
 		</select><p class="description"><?php esc_html_e( 'AIはすべてFourmix IntelligenceのStudioで作成します。ここでは公開するAIだけを選びます。', 'fourmix-intelligence' ); ?></p></td></tr>
-		<tr><th><?php esc_html_e( '社内向けAI', 'fourmix-intelligence' ); ?></th><td><a href="<?php echo esc_url( admin_url( 'admin.php?page=fourmix-intelligence-operations' ) ); ?>"><?php esc_html_e( '運営支援画面でAIを選択', 'fourmix-intelligence' ); ?></a><p class="description"><?php esc_html_e( '本人が接続した後、Studioの社内向けAIから選択します。', 'fourmix-intelligence' ); ?></p></td></tr>
+		<tr><th><?php esc_html_e( '社内向けAI', 'fourmix-intelligence' ); ?></th><td><a href="<?php echo esc_url( admin_url( 'admin.php?page=fourmix-intelligence-personal-settings' ) ); ?>"><?php esc_html_e( '本人のAI設定を開く', 'fourmix-intelligence' ); ?></a><p class="description"><?php esc_html_e( '本人が接続した後、Studioの社内向けAIから選択します。', 'fourmix-intelligence' ); ?></p></td></tr>
 		<tr><th><?php esc_html_e( '接続の実行ユーザー', 'fourmix-intelligence' ); ?></th><td>
 		<?php
 		wp_dropdown_users(

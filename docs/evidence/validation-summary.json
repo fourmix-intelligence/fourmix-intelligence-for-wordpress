@@ -1,0 +1,12 @@
+{
+  "date": "2026-10-02",
+  "scope": "WordPressの既存ローカル環境。本番配備・push・実モデル・実中央業務更新は未実施。",
+  "restContractChecks": 43,
+  "browserChecks": {"chat": 26, "dock": 26, "richContentAndAttachments": 23, "total": 75, "javascriptErrors": 0, "screenshots": 23},
+  "existingContractChecks": {"nativeOperations": 22, "studioSelection": 10},
+  "staticAndUnit": {"wordPressCodingStandardsPhpFiles": 24, "javascriptSyntaxFiles": 16, "publicRequestGuardChecks": 34, "executionJournal": "成功", "chatSession": "成功", "phpSyntax": "全本体・テストファイル成功"},
+  "architecture": "中央AI・会話・添付・確認契約を再利用し、ページと浮窓は同じ会話DOM。HTTP転送設定を統合。docs/chat-architecture-and-performance.mdを参照。",
+  "performance": {"scenario": "80件の合成履歴・201イベント・本機Edge・キャッシュ無効", "rendererCallsBefore": 14021, "rendererCallsAfter": 9, "closedDockRestRequests": 0, "closedDockHeavyweightScripts": 0, "historyExpansionVerified": 82, "windowListenersAddedAndRemoved": 60},
+  "cleanup": "設定ハッシュが元と一致。合成担当者・記事・MUローダー・専用HTTPコンテナーとGit外の認証JSONを削除。chat-cleanup-results.jsonを参照。",
+  "notVerified": ["実Studio接続と実モデルの逐次応答", "中央ツールからの実業務更新", "Office文書の抽出", "CUAでの操作", "実スマートフォンのIME", "本番並行処理・worker再起動・プロキシのバッファリング・大容量ファイルのピークメモリ"]
+}

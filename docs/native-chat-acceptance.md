@@ -1,10 +1,14 @@
 # WordPressのネイティブ相談画面と検証結果
 
-開発版 `2.0.0-dev` の変更です。配布・公開・配備は実施していません。Fourmix Intelligenceの既存のJSON応答、AI Studio一覧、会話履歴、接続操作の確認APIを利用します。
+開発版 `2.0.0-dev` の変更です。配布・公開・配備は実施していません。Fourmix Intelligenceの既存のNDJSON応答、AI Studio一覧、会話履歴、非公開添付、接続操作の確認APIを利用します。JSON互換経路も保持しています。
 
 ## 人による確認入口
 
-既存の統合環境のWordPressは `http://localhost:48093` です。管理画面の **Fourmix Intelligence** メニューで、本人の短期接続と社内向けAIを選択します。投稿・固定ページの編集画面から **この投稿についてAIに相談** を開くと、対象を参考情報として送信するか明示的に選択できます。送信対象はID・種類・タイトル・状態だけで、本文は含めません。
+既存の統合環境のWordPressは `http://localhost:48093` です。管理画面の **Fourmix Intelligence → 本人のAI設定** で、本人の短期接続と社内向けAIを選択します。`/wp-admin/admin.php?page=fourmix-intelligence-personal-settings` が入口です。
+
+**AIに相談** は会話専用のページです。`/wp-admin/admin.php?page=fourmix-intelligence-operations`、または編集権限を持つ利用者の管理画面右下の公式アイコンから開けます。ページと浮窓は同じDOM・会話・確認経路を使い、入力や添付を維持します。未設定時は設定への案内だけを表示します。直接操作の従来のカタログは `fourmix-intelligence-native-operations` に移しました。
+
+投稿・固定ページの編集画面にも **この内容についてAIに相談** の入口があります。現在の画面を参考情報として送信するか、毎回明示的に選択できます。送信対象は画面ID・名前と、閲覧可能な投稿のID・種類・タイトル・状態だけで、本文や一覧の行データは含めません。
 
 公開画面は管理者が設定したお客様向けAIだけを使用します。**AIコンシェルジュ** ブロック、または次の短コードで配置できます。訪問者に社内AIの選択欄はありません。
 
@@ -17,12 +21,24 @@
 ## 相談・確認の状態
 
 - メッセージ一覧と入力領域を分離し、長文は一覧内でスクロールします。Enterで改行、Ctrl/⌘ + Enterで送信します。二重クリックでは同じ依頼を増やしません。
-- JSON応答待ちでは送信中と受信停止を表示します。受信停止はブラウザー側の待機を止める操作で、サーバーの実行取消ではありません。固定回数のツール呼出し制限は追加していません。
+- 上流のNDJSONを実際の到着時に転送し、回答の断片・進行状態・完了を表示します。一括回答を文字に分割して再生しません。実行結果を保存できた時点だけを完了とします。受信停止はブラウザー側の待機を止める操作で、サーバーの実行取消ではありません。固定回数のツール呼出し制限は追加していません。
 - 通信断・画面再読込後は同じ送信の結果を照会します。未着の送信だけを同じ確認情報で再開でき、結果不明の実行は再送しません。新しい相談への切替が前の操作を取り消さないことも確認画面で表示します。
 - 構造化された確認IDを会話と本人に結び付け、中央サーバーから正式な操作名・引数・監査IDを取得します。AI本文から操作を生成しません。
 - この画面の承認は、サイトで有効なWordPress能力と本人の対象権限で再検証できる操作に限定します。その他の接続操作の確認はFourmix Intelligence側で扱います。確認APIは中央側でも本人・接続・AI・ワークスペースの権限を再検証します。
 - **今回は実行しない** はこの画面での実行を見送り、確認要求自体は期限切れまで保留します。後続メッセージや再読込でも、この画面で見送った状態を保持します。
 - 確認送信前に実行記録を取得し、成功・失敗・実行中・結果不明を区別します。結果不明では承認を再送せず、状態照会と対象データ・監査の確認を案内します。
+
+## 回答と添付
+
+Markdownの見出し・引用・リスト・強調・表・コードを表示します。表は表だけを横にスクロールでき、TSVとしてコピーできます。コードは構文色分けとコピー、回答は全体のコピーに対応します。次の質問は入力へ反映し、利用者が送信します。
+
+Mermaidは実際にSVGへ描画し、図の拡大・閉じる操作に対応します。HTML、危険リンク、図の設定上書き・クリック処理・外部参照を拒否します。SVGは無権限sandboxとCSP内に置きます。モデル指定の画像は自動取得せず、明示操作で開くリンクにします。表示部品の版とライセンスは[表示部品とライセンス](chat-display-dependencies.md)を参照してください。
+
+添付はStudioが返す許可ポリシーとWordPressの受付上限の両方を適用します。選択・ドラッグ・貼り付けに対応し、画像プレビュー、実転送の進捗、保存待ち、取り除き、エラーと結果照会を表示します。最大値は既存上流の8件・1件20MiB・合計40MiBで、AIの設定やWordPressの制限が小さい場合はそちらを使用します。対応候補はPNG/JPEG/WebP、PDF、UTF-8テキスト・Markdown・CSV/TSV、DOCX/XLSX/PPTXです。実際の一覧はAIの許可に従います。今回の合成実測はPNG・TXT、偽PNG、非対応形式、過大ファイルです。Office文書の内容抽出は未実測です。
+
+添付だけの相談も送信できます。ファイルはWordPressの公開メディアへ登録せず、既存の会話別の非公開APIへ送ります。保存確認まで相談の送信を止め、未到達を照会できた場合だけ同じ確認IDで再試行します。保存後に通信が切れた場合は保存済み結果を取得し、二重アップロードしません。未送信の添付を取り除くときは専用DELETEの完了を確認します。
+
+社内添付はnonce・本人接続・AI・サイト・現在の会話を確認します。公開添付は同一サイト・レート制限・お客様向けAI・HttpOnly訪問者cookie・サーバー保持の会話用tokenを確認します。会話ID・添付IDの持込みで別訪問者のファイルを読めません。
 
 ## 訪問者と保存の境界
 
@@ -34,24 +50,33 @@
 
 ## 実施した検証
 
+今回の責務整理と、同条件での性能測定・残る制約は[相談画面の責務とローカル性能確認](chat-architecture-and-performance.md)に記録しています。
+
 |対象|結果と実際の範囲|
 |---|---|
-|既存WordPressのREST契約|36項目成功。本人接続・AI保存と撤回・投稿情報の選択・連続会話・二重送信・旧会話拒否・正式確認・投稿者の公開拒否・不明結果・別訪問者の履歴拒否を実RESTで検証|
+|既存WordPressのREST契約|43項目成功。本人接続・AI保存と撤回・投稿情報と画面名の選択・連続会話・二重送信・旧会話拒否・正式確認・投稿者の公開拒否・不明結果・別訪問者の履歴拒否・JSONイベントの入れ子の秘密除外を実RESTで検証|
 |本機Edgeの実画面|26項目成功、JavaScript例外0。WordPressの実HTMLと実RESTを操作。連続会話、二重クリック、受信停止、戻る操作・再読込、通信未到達からの復旧、AI切替、確認見送りと承認、暗色・1365px/390px、公開履歴・別訪問者を検証|
-|合成応答の範囲|Studio一覧、会話応答、中央操作のプレビュー・実行結果だけを合成。中央ツールからの実業務更新・実AI・ストリームは未実測。UIで成功した合成確認を実業務の完了とは扱わない|
-|静的・単体|PHP構文、WordPress Coding Standards全18ファイル、公開リクエスト保護34項目、実行記録、送信期限・構造化確認の単体検証、JavaScript構文を実行。Windowsの改行を正規化した作業コピーで全体を確認し、PHPの改行規則をGit属性にも固定|
+|管理画面の浮窓|[結果JSON](evidence/dock-ui-results.json)。未設定、本人設定、30回の開閉、ページの共用DOM、送信中の閉じる操作、通常リンク・戻る、文脈選択、明示確認・結果不明、390px・暗色・高さ500px、標準投稿編集、認証失効を検証|
+|回答と添付|23項目成功、JavaScript例外0。[結果JSON](evidence/rich-ui-results.json)。実NDJSONの最初の断片を完了より1.713秒前に観測。表・コードのコピー、Mermaid実描画と拡大、安全表示、実multipart進捗・削除・通信断からの復旧・非公開画像復元・別訪問者のファイル拒否を検証|
+|合成応答の範囲|Studio一覧、会話応答、中央操作のプレビュー・実行結果を合成。別のローカルHTTPサーバーからNDJSON・添付を実転送。中央ツールからの実業務更新・実AI・実Studioとの逐次応答は未実測。UIで成功した合成確認を実業務の完了とは扱わない|
+|静的・単体|PHP構文、WordPress Coding Standards全24ファイル、公開リクエスト保護34項目、実行記録、送信期限・構造化確認の単体検証、JavaScript構文を実行。Windowsの改行を正規化した作業コピーで全体を確認し、PHPの改行規則をGit属性にも固定|
 |既存契約の回帰|ネイティブ業務22項目、Studio選択10項目を実WordPressで再実行。設定・署名・権限と公開結果の絞込みを維持|
 |画面証跡|[結果JSON](evidence/chat-ui-results.json)、[管理画面](evidence/chat-admin-desktop.png)、[管理画面390px](evidence/chat-admin-narrow.png)、[暗色390px](evidence/chat-admin-dark-narrow.png)、[結果不明](evidence/chat-admin-unknown.png)、[公開画面](evidence/chat-public-desktop.png)、[公開画面390px](evidence/chat-public-narrow.png)、[公開暗色390px](evidence/chat-public-dark-narrow.png)、[既存テーマ内の公開画面](evidence/chat-public-page-desktop.png)|
 
 専用のCUA/コンピューター操作ツールはこの実行環境では公開されていません。本機のEdgeをPlaywrightで操作し、保存した画像を目視で確認しました。テーマのナビゲーションを残し、余白、メッセージ幅、行高、長文、スクロール、入力、確認カードを調整しています。
 
+今回の追加証跡は[浮窓の狭い画面](evidence/dock-tool-narrow.png)、[標準編集画面](evidence/dock-native-editor.png)、[表の狭い画面](evidence/rich-table-narrow.png)、[図の拡大](evidence/rich-diagram-expanded.png)、[添付プレビュー](evidence/rich-attachment-preview.png)、[公開添付](evidence/rich-public-attachment-narrow.png)です。コピー検証では本機のクリップボードを変更せず、ブラウザー内の合成Clipboardへ書きました。実スマートフォンのIME・仮想キーボードは未実測です。
+
+主体サーバーの一部のお客様向け処理には、審査後の完成回答を小分けにして逐次イベントとして送る既存処理があります。本プラグインでは文字再生を行いませんが、その上流処理の変更は共有Python担当の作業です。審査完了後の回答は一括メッセージとして区別する必要があり、このWordPress変更だけで実モデルの全経路の逐次応答が完成したとは扱いません。
+
 ## ローカルでの再実行
 
 既存のWordPressだけを使用します。WooCommerceの追加インストール、他サービスの起動、実データの初期化は不要です。
 
-1. `wordpress-init` に明示的に `wp eval-file .../tests/chat-ui-fixture.php prepare` を渡し、JSONをGit外の一時ファイルへ保存します。既定の初期化commandは実行しません。
-2. `wp eval-file .../tests/chat-contract-integration.php` を実行します。
-3. 既存のPlaywrightを `FMI_PLAYWRIGHT_MODULE` で指定し、`node tests/chat-ui-e2e.cjs <一時JSON> <証跡先>` を実行します。本機Edgeを使用します。
-4. 結果にかかわらず `wp eval-file .../tests/chat-ui-fixture.php cleanup` を実行し、一時JSONを削除します。設定・読み込みファイルの同時変更を検知した場合は上書きせず停止します。
+1. 既存の検証イメージで `tests/rich-upstream.php` をPHPのHTTPサーバーとして一時起動します。既存のDockerネットワーク内だけで、コンテナー名を `fourmix-wp-rich-fixture`、ポートを8080にします。ホストへの公開やDBは不要です。
+2. `wordpress-init` に明示的に `wp eval-file .../tests/chat-ui-fixture.php prepare-rich` を渡し、JSONをGit外の一時ファイルへ保存します。既定の初期化commandは実行しません。
+3. `wp eval-file .../tests/chat-contract-integration.php` を実行します。
+4. 既存のPlaywrightを `FMI_PLAYWRIGHT_MODULE` で指定し、`node tests/chat-ui-e2e.cjs <一時JSON> <証跡先>`、`dock-ui-e2e.cjs`、`rich-ui-e2e.cjs`を順番に実行します。本機Edgeを使用します。
+5. 結果にかかわらず `wp eval-file .../tests/chat-ui-fixture.php cleanup` を実行し、一時JSONを削除し、専用の合成HTTPコンテナーを停止します。設定・読み込みファイルの同時変更を検知した場合は上書きせず停止します。
 
 合成検証用MUローダーは一時的に読み込むファイルで、プラグイン本体からは読み込みません。検証中はモデル以外の外部HTTPとメールも止めます。検証の終了・復元後に普段のサイト設定へ戻ります。APIの支払いや外部公開は実行しません。

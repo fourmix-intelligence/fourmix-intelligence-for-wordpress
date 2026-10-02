@@ -16,7 +16,7 @@ final class StaffController {
 	}
 
 	public function routes(): void {
-		foreach ( array( 'connect', 'catalog', 'select', 'chat', 'session', 'run_status', 'new_conversation', 'action', 'confirm_action', 'preview', 'confirm' ) as $action ) {
+		foreach ( array( 'connect', 'catalog', 'select', 'chat', 'chat_stream', 'session', 'run_status', 'new_conversation', 'action', 'confirm_action', 'preview', 'confirm' ) as $action ) {
 			register_rest_route(
 				'fourmix-intelligence/v1',
 				'/staff/' . $action,
@@ -82,8 +82,9 @@ final class StaffController {
 	private function safe_agents( array $agents ): array {
 		return array_map(
 			static fn( $agent ) => array(
-				'name'  => $agent['name'],
-				'label' => $agent['service_name'] ?? $agent['name'],
+				'name'        => $agent['name'],
+				'label'       => $agent['service_name'] ?? $agent['name'],
+				'attachments' => \FourmixIntelligence\WordPress\Support\Attachments::policy( (array) ( $agent['attachments'] ?? array() ) ),
 			),
 			$agents
 		);
@@ -152,6 +153,38 @@ final class StaffController {
 			'status' => $post->post_status,
 		);
 	}
+	public function attachment_access( WP_REST_Request $request, bool $create = false ): array {
+		list( $token, $agent, $scope ) = $this->identity( $request );
+		$state                         = (array) get_transient( $scope );
+		if ( empty( $state['thread_id'] ) || ! hash_equals( $state['thread_id'], (string) $request->get_param( 'thread_id' ) ) ) {
+			throw new \RuntimeException( 'attachment_thread' );
+		}
+		$id        = (string) ( $state['conversation_id'] ?? '' );
+		$requested = (string) $request->get_param( 'conversation_id' );
+		if ( $requested && ! hash_equals( $id, $requested ) ) {
+			throw new \RuntimeException( 'attachment_conversation' );
+		}
+		$manifest = ( new Client() )->request( 'GET', '/api/v3/ai/plugins/' . rawurlencode( $agent ) . '/metadata', null, $token );
+		$policy   = \FourmixIntelligence\WordPress\Support\Attachments::policy( (array) ( $manifest['attachments'] ?? array() ) );
+		if ( $create && ! $id && $policy['enabled'] ) {
+			$conversation = ( new Client() )->request( 'POST', '/api/v3/agent-conversations/' . rawurlencode( $agent ) . '/resolve', array(), $token );
+			$id           = (string) ( $conversation['identify'] ?? '' );
+			if ( ! \FourmixIntelligence\WordPress\Support\Attachments::uuid( $id ) ) {
+				throw new \RuntimeException( 'attachment_conversation' );
+			}
+			$state['conversation_id'] = $id;
+			set_transient( $scope, $state, 15 * MINUTE_IN_SECONDS );
+		}
+		return array(
+			'token'           => $token,
+			'agent'           => $agent,
+			'scope'           => $scope,
+			'conversation_id' => $id,
+			'thread_id'       => $state['thread_id'],
+			'policy'          => $policy,
+			'headers'         => array(),
+		);
+	}
 
 	public function session( WP_REST_Request $request ): WP_REST_Response {
 		try {
@@ -192,7 +225,11 @@ final class StaffController {
 		}
 	}
 
-	public function chat( WP_REST_Request $request ): WP_REST_Response {
+	public function chat_stream( WP_REST_Request $request ): WP_REST_Response {
+		return \FourmixIntelligence\WordPress\Support\StreamResponse::create( fn( $emit ) => $this->chat( $request, $emit ) );
+	}
+
+	public function chat( WP_REST_Request $request, ?callable $emit = null ): WP_REST_Response {
 		try {
 			list( $token, $agent, $scope ) = $this->identity( $request );
 			$key                           = ChatSession::key( (string) $request->get_param( 'request_id' ) );
@@ -212,11 +249,18 @@ final class StaffController {
 			);
 			$post_id = absint( $request->get_param( 'post_id' ) );
 			if ( true === $request->get_param( 'include_context' ) ) {
-				$record = $this->record_context( $post_id );
-				if ( ! $record ) {
-					throw new \RuntimeException( esc_html__( 'この投稿を参照できません。', 'fourmix-intelligence' ) );
+				// 画面名は参考情報であり、権限や実行対象の根拠にはしません。
+				$context['screen'] = array(
+					'id'    => substr( sanitize_key( (string) $request->get_param( 'screen' ) ), 0, 80 ),
+					'title' => mb_substr( sanitize_text_field( (string) $request->get_param( 'screen_title' ) ), 0, 120 ),
+				);
+				if ( $post_id ) {
+					$record = $this->record_context( $post_id );
+					if ( ! $record ) {
+						throw new \RuntimeException( esc_html__( 'この投稿を参照できません。', 'fourmix-intelligence' ) );
+					}
+					$context['record'] = $record;
 				}
-				$context['record'] = $record;
 			}
 			$body            = array(
 				'messages' => array(
@@ -231,17 +275,23 @@ final class StaffController {
 			if ( is_string( $conversation_id ) && preg_match( '/^[0-9a-f-]{36}$/i', $conversation_id ) ) {
 				$body['conversation_id'] = $conversation_id;
 			}
+			$ids = (array) $request->get_param( 'attachment_ids' );
+			if ( $ids ) {
+				$body['messages'][0]['attachment_ids'] = AttachmentController::validate_ids( $ids, $this->attachment_access( $request ) );
+			}
 			$response = ChatSession::run(
 				$scope,
 				$key,
 				array(
-					'operation' => 'chat',
-					'thread_id' => $state['thread_id'],
-					'message'   => $message,
-					'context'   => $context,
+					'operation'   => 'chat',
+					'thread_id'   => $state['thread_id'],
+					'message'     => $message,
+					'attachments' => $ids,
+					'context'     => $context,
 				),
-				function () use ( $body, $token, $agent, $scope, $state ) {
-					$response = ( new Client() )->request( 'POST', '/api/v3/ai/plugins/' . rawurlencode( $agent ) . '/runs', $body, $token );
+				function () use ( $body, $token, $agent, $scope, $state, $emit ) {
+					$path     = '/api/v3/ai/plugins/' . rawurlencode( $agent ) . '/runs';
+					$response = $emit ? ( new Client() )->stream( $path . '/stream', $body, $token, $emit ) : ( new Client() )->request( 'POST', $path, $body, $token );
 					$current  = (array) get_transient( $scope );
 					if ( ( $current['thread_id'] ?? '' ) === $state['thread_id'] ) {
 						$current['conversation_id'] = $response['conversation_id'] ?? ( $current['conversation_id'] ?? '' );
@@ -427,7 +477,7 @@ final class StaffController {
 	}
 
 	private function reply( array $data, int $status = 200 ): WP_REST_Response {
-		return new WP_REST_Response( $data, $status, array( 'Cache-Control' => 'private, no-store' ) );
+		return new WP_REST_Response( \FourmixIntelligence\WordPress\Support\StreamResponse::clean( $data ), $status, array( 'Cache-Control' => 'private, no-store' ) );
 	}
 
 	private function error( \Throwable $error, int $status = 422 ): WP_REST_Response {

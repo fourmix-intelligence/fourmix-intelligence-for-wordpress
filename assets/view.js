@@ -54,6 +54,9 @@
       const data = await session();
       window.FourmixIntelligenceChat.mount(body, {
         scope: data.scope + ':' + kind, label: __('AI案内'), ttl: 86400000,
+        attachments: {policy: data.attachments, endpoint: settings.attachmentEndpoint},
+        newConversation: () => request(settings.attachmentEndpoint + 'new_conversation', {}),
+        stream: (body, signal, receive) => window.FourmixIntelligenceChat.stream(settings.streamEndpoint, {method: 'POST', credentials: 'same-origin', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)}, signal, receive),
         welcome: __('このサイトの内容についてご相談ください。サイトの管理者が設定した公開AIがご案内します。'),
         request: (action, payload, signal) => request(action === 'chat' ? settings.endpoint : settings.statusEndpoint, payload, signal),
         context: () => ({context: context(kind)}),

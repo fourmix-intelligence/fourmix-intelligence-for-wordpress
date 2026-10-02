@@ -13,7 +13,7 @@ final class ConversationController {
 	public function register(): void {
 		add_action( 'rest_api_init', array( $this, 'routes' ) ); }
 	public function routes(): void {
-		foreach ( array( 'session', 'run_status' ) as $action ) {
+		foreach ( array( 'session', 'run_status', 'new_conversation' ) as $action ) {
 			register_rest_route(
 				'fourmix-intelligence/v1',
 				'/public/' . $action,
@@ -35,6 +35,15 @@ final class ConversationController {
 		);
 		register_rest_route(
 			'fourmix-intelligence/v1',
+			'/chat_stream',
+			array(
+				'methods'             => 'POST',
+				'callback'            => array( $this, 'chat_stream' ),
+				'permission_callback' => '__return_true',
+			)
+		);
+		register_rest_route(
+			'fourmix-intelligence/v1',
 			'/history',
 			array(
 				'methods'             => 'POST',
@@ -44,7 +53,11 @@ final class ConversationController {
 		);
 	}
 
-	public function chat( WP_REST_Request $request ): WP_REST_Response {
+	public function chat_stream( WP_REST_Request $request ): WP_REST_Response {
+		return \FourmixIntelligence\WordPress\Support\StreamResponse::create( fn( $emit ) => $this->chat( $request, $emit ) );
+	}
+
+	public function chat( WP_REST_Request $request, ?callable $emit = null ): WP_REST_Response {
 		$denied = $this->access_error( $request );
 		if ( null !== $denied ) {
 			return $denied;
@@ -70,6 +83,10 @@ final class ConversationController {
 			$scope = ChatSession::visitor();
 			$key   = ChatSession::key( (string) $request->get_param( 'request_id' ) );
 			$this->continue_conversation( $request, $body, $scope );
+			$ids = (array) $request->get_param( 'attachment_ids' );
+			if ( $ids ) {
+				$body['messages'][0]['attachment_ids'] = AttachmentController::validate_ids( $ids, $this->attachment_access( $request ) );
+			}
 			$response = ChatSession::run(
 				$scope,
 				$key,
@@ -77,10 +94,16 @@ final class ConversationController {
 					'operation' => 'customer.chat',
 					'body'      => $body,
 				),
-				function () use ( $body, $scope ) {
-					$response = ( new Client() )->post( '/api/v3/ai/plugins/' . Options::public_agent() . '/runs', $body );
-					$id       = (string) ( $response['conversation_id'] ?? '' );
-					$secret   = (string) ( $response['customer_token'] ?? '' );
+				function () use ( $body, $scope, $emit ) {
+					$path        = '/api/v3/ai/plugins/' . Options::public_agent() . '/runs';
+					$public_emit = $emit ? static function ( $event ) use ( $emit ) {
+						if ( in_array( $event['type'] ?? '', array( 'run.created', 'assistant.delta', 'assistant.message', 'run.status', 'status' ), true ) ) {
+							$emit( $event );
+						}
+					} : null;
+					$response    = $public_emit ? ( new Client() )->stream( $path . '/stream', $body, null, $public_emit ) : ( new Client() )->post( $path, $body );
+					$id          = (string) ( $response['conversation_id'] ?? '' );
+					$secret      = (string) ( $response['customer_token'] ?? '' );
 					if ( preg_match( '/^[a-f0-9-]{36}$/iD', $id ) && preg_match( '/^[a-f0-9]{64}$/D', $secret ) ) {
 						$history = 'history' === Options::get( 'conversation_mode', 'history' );
 						$ttl     = $history ? 30 * DAY_IN_SECONDS : DAY_IN_SECONDS;
@@ -107,11 +130,12 @@ final class ConversationController {
 			return $denied;
 		}
 		try {
-			$this->require_customer_agent();
+			$manifest = $this->require_customer_agent();
 			return $this->reply(
 				array(
-					'scope' => ChatSession::visitor(),
-					'agent' => Options::public_agent(),
+					'scope'       => ChatSession::visitor(),
+					'agent'       => Options::public_agent(),
+					'attachments' => \FourmixIntelligence\WordPress\Support\Attachments::policy( (array) ( $manifest['attachments'] ?? array() ) ),
 				)
 			);
 		} catch ( \Throwable $error ) {
@@ -137,7 +161,19 @@ final class ConversationController {
 	}
 
 	private function reply( array $data, int $status = 200 ): WP_REST_Response {
-		return new WP_REST_Response( $data, $status, array( 'Cache-Control' => 'private, no-store' ) );
+		return new WP_REST_Response( \FourmixIntelligence\WordPress\Support\StreamResponse::clean( $data ), $status, array( 'Cache-Control' => 'private, no-store' ) );
+	}
+	public function new_conversation( WP_REST_Request $request ): WP_REST_Response {
+		$denied = $this->access_error( $request );
+		if ( $denied ) {
+			return $denied; }
+		try {
+			$this->require_customer_agent();
+			delete_transient( 'fmi_customer_prepare_' . ChatSession::visitor() );
+			return $this->reply( array( 'fresh' => true ) );
+		} catch ( \Throwable $error ) {
+			return $this->reply( array( 'message' => __( '新しい相談を準備できませんでした。', 'fourmix-intelligence' ) ), 403 );
+		}
 	}
 
 	public function history( WP_REST_Request $request ): WP_REST_Response {
@@ -177,11 +213,50 @@ final class ConversationController {
 		}
 	}
 
-	private function require_customer_agent(): void {
+	private function require_customer_agent(): array {
 		$manifest = ( new Client() )->request( 'GET', '/api/v3/ai/plugins/' . rawurlencode( Options::public_agent() ) . '/metadata' );
 		if ( 'customer' !== ( $manifest['audience'] ?? '' ) ) {
 			throw new \RuntimeException( esc_html__( 'お客様向けAIを選択してください。', 'fourmix-intelligence' ) );
 		}
+		return $manifest;
+	}
+	public function attachment_access( WP_REST_Request $request, bool $create = false ): array {
+		if ( $this->access_error( $request ) ) {
+			throw new \RuntimeException( 'attachment_origin' );
+		}
+		$manifest = $this->require_customer_agent();
+		$policy   = \FourmixIntelligence\WordPress\Support\Attachments::policy( (array) ( $manifest['attachments'] ?? array() ) );
+		$scope    = ChatSession::visitor();
+		$body     = array();
+		$this->continue_conversation( $request, $body, $scope );
+		$id     = (string) ( $body['conversation_id'] ?? '' );
+		$secret = (string) ( $body['customer_token'] ?? '' );
+		if ( $create && ! $id && $policy['enabled'] ) {
+			$prepared = (array) get_transient( 'fmi_customer_prepare_' . $scope );
+			if ( ! empty( $prepared['id'] ) ) {
+				$id     = $prepared['id'];
+				$secret = (string) get_transient( 'fmi_customer_' . hash( 'sha256', $scope . ':' . $id ) );
+			}
+			if ( ! $secret ) {
+				$value  = ( new Client() )->post( '/api/v3/ai/plugins/' . rawurlencode( Options::public_agent() ) . '/customer-conversation', array() );
+				$id     = (string) ( $value['conversation_id'] ?? '' );
+				$secret = (string) ( $value['customer_token'] ?? '' );
+				if ( ! \FourmixIntelligence\WordPress\Support\Attachments::uuid( $id ) || ! preg_match( '/^[a-f0-9]{64}$/D', $secret ) ) {
+					throw new \RuntimeException( 'attachment_conversation' );
+				}
+				set_transient( 'fmi_customer_' . hash( 'sha256', $scope . ':' . $id ), $secret, DAY_IN_SECONDS );
+				set_transient( 'fmi_customer_prepare_' . $scope, array( 'id' => $id ), 15 * MINUTE_IN_SECONDS );
+			}
+		}
+		return array(
+			'token'           => (string) Options::get( 'token', '' ),
+			'agent'           => Options::public_agent(),
+			'scope'           => $scope,
+			'thread_id'       => '',
+			'conversation_id' => $id,
+			'policy'          => $policy,
+			'headers'         => $secret ? array( 'X-Fourmix-Customer-Token' => $secret ) : array(),
+		);
 	}
 
 	private function access_error( WP_REST_Request $request ): ?WP_REST_Response {

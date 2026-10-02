@@ -21,7 +21,10 @@ final class Plugin {
 		$this->ensure_sync_schedule();
 		( new SettingsPage() )->register();
 		( new \FourmixIntelligence\WordPress\Admin\OperationsPage() )->register();
+		( new \FourmixIntelligence\WordPress\Admin\PersonalSettingsPage() )->register();
+		( new \FourmixIntelligence\WordPress\Admin\StaffChat() )->register();
 		( new \FourmixIntelligence\WordPress\Rest\StaffController() )->register();
+		( new \FourmixIntelligence\WordPress\Rest\AttachmentController() )->register();
 		( new BlockRegistry() )->register();
 		( new ConversationController() )->register();
 		( new NativeBridgeController() )->register();

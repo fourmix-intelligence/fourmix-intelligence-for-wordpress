@@ -8,11 +8,11 @@ require_once ABSPATH . 'wp-admin/includes/user.php';
 $name = 'fmi_chat_ui_fixture';
 $loader = WP_CONTENT_DIR . '/mu-plugins/fourmix-chat-ui-synthetic.php';
 $mode = $args[0] ?? 'inspect';
-if ( 'prepare' === $mode ) {
+if ( in_array( $mode, array( 'prepare', 'prepare-rich' ), true ) ) {
 	if ( get_option( $name, false ) || file_exists( $loader ) ) { throw new RuntimeException( '前回の検証を片付けてください。' ); }
 	add_filter( 'pre_http_request', static fn() => new WP_Error( 'synthetic_external_denied', '合成準備中の外部通信は禁止されています。' ), 1 );
 	add_filter( 'pre_wp_mail', static fn() => false );
-	$state = array( 'settings' => get_option( 'fourmix_intelligence_settings', array() ), 'expires' => time() + HOUR_IN_SECONDS, 'posts' => array(), 'actor' => 0, 'calls' => array(), 'actions' => array() );
+	$state = array( 'settings' => get_option( 'fourmix_intelligence_settings', array() ), 'expires' => time() + HOUR_IN_SECONDS, 'posts' => array(), 'actor' => 0, 'calls' => array(), 'actions' => array(), 'rich' => 'prepare-rich' === $mode );
 	add_option( $name, $state, '', false );
 	$prefix = 'fmi_chat_' . wp_generate_uuid4();
 	$state['prefix'] = $prefix; update_option( $name, $state, false );
@@ -36,6 +36,12 @@ if ( 'prepare' === $mode ) {
 		array( 'name' => AUTH_COOKIE, 'value' => wp_generate_auth_cookie( $state['actor'], $expires, 'auth', $session ), 'domain' => 'localhost', 'path' => '/', 'httpOnly' => true, 'secure' => false ),
 		array( 'name' => LOGGED_IN_COOKIE, 'value' => wp_generate_auth_cookie( $state['actor'], $expires, 'logged_in', $session ), 'domain' => 'localhost', 'path' => '/', 'httpOnly' => true, 'secure' => false ),
 	) ) );
+} elseif ( 'expire-personal' === $mode ) {
+	$state = get_option( $name );
+	$hash = $args[1] ?? '';
+	$key = 'fmi_staff_' . $hash;
+	if ( ! is_array( $state ) || ! preg_match( '/^[a-f0-9]{64}$/', $hash ) || ! in_array( '_transient_' . $key, (array) ( $state['options'] ?? array() ), true ) ) { throw new RuntimeException( '検証担当者の短期接続だけを期限切れにできます。' ); }
+	delete_transient( $key ); WP_CLI::success( '検証担当者の本人接続を期限切れにしました。' );
 } elseif ( 'cleanup' === $mode ) {
 	$state = get_option( $name ); if ( ! is_array( $state ) ) { throw new RuntimeException( '検証の保存情報がありません。' ); }
 	$current = get_option( 'fourmix_intelligence_settings', array() );

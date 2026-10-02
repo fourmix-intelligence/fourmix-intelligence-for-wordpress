@@ -1,0 +1,43 @@
+{
+  "environment": "本機Edge・実WordPress HTTP/REST・独立ローカル合成HTTP。実Studio/モデル・中央業務更新・実ユーザーファイルは未使用。コピー先はブラウザー内の合成Clipboard。",
+  "checks": [
+    "完了前にHTTP断片から見出しと表を表示",
+    "逐次イベントと完了の時間差を実測し一括応答の再生をしない",
+    "逐次イベントから会話の秘密と実行ticketを再帰的に除外",
+    "強調・取り消し・引用・リストを安全なMarkdownで表示",
+    "表のTSVコピーとコードコピー・構文色分け",
+    "Mermaidをstrict設定と無権限sandbox・CSP内で実描画",
+    "図の拡大と閉じる操作",
+    "390pxで表だけを横スクロールし浮窓やページを広げない",
+    "暗色でも表・コード・図を表示",
+    "図の設定上書き・スクリプト・危険リンク・外部画像自動取得を拒否",
+    "ファイルの実multipart転送・進捗・保存待ちを表示し送信を保留",
+    "未送信添付の取り除きは中央の専用DELETEで確認",
+    "画像プレビューと添付だけの依頼を既存attachment_idsで送信",
+    "再読込で送信済み画像を本人の非公開content APIから復元",
+    "非対応形式と過大ファイルはブラウザーと受付ポリシーで拒否",
+    "拡張子を偽った画像はWPサーバーでも拒否",
+    "未到達を照会した添付だけを同じ確認IDで再試行",
+    "保存後の通信断は保存済み結果を復元し再アップロードしない",
+    "匿名公開添付はcustomer-conversationと秘密確認ヘッダーで所有を照合",
+    "別訪問者は会話IDと添付IDを持ち込んでも内容を取得しない",
+    "匿名訪問者が社内添付APIへ入れない",
+    "公開の逐次イベント・保存に会話秘密や実行ticketを含めない",
+    "JavaScript例外なし"
+  ],
+  "screenshots": [
+    "rich-diagram-expanded.png",
+    "rich-page-desktop.png",
+    "rich-table-narrow.png",
+    "rich-diagram-dark-narrow.png",
+    "rich-attachment-preview.png",
+    "rich-attachment-message.png",
+    "rich-public-attachment-narrow.png"
+  ],
+  "errors": [],
+  "streamingTiming": {
+    "firstDeltaMs": 1845.199999988079,
+    "completedMs": 3558.5,
+    "differenceMs": 1713.300000011921
+  }
+}
