@@ -69,9 +69,11 @@ Mermaidは実際にSVGへ描画し、図の拡大・閉じる操作に対応し�
 
 共有Python側でも、審査後の完成回答を12文字ごとに分割して再生する処理を削除しました。事前に現在の商品事実を確認した読み取り専用のEC-CUBE経路では生成中の本文増分を配信します。一般のお客様向けAIは従来どおり全回答の審査を行い、その後に確定メッセージを一括で返します。対応条件、stream非対応のモデル、取消・timeout・バッファの制限は[共有Pythonの逐次応答契約](../../../python/docs/customer-streaming-contract.md)を参照してください。実Studio・実モデルを使うWordPressとの総合接続試験は未実施です。
 
-本文増分がない審査経路用に `tests/reviewed-chat-ui-e2e.cjs` と合成HTTPの応答を追加しました。管理・公開画面の審査待ち、審査前の本文非表示、確定本文の一回表示、JavaScript例外を確認するスクリプトです。JavaScript・PHPの構文は確認済みですが、2026年10月2日の追加画面検証では既存WordPressのHTTPサービスが健康確認でtimeoutとなり、設定画面への遷移で失敗しました。上流のstream要求には到達しておらず、この追加検証の成功件数・画面証跡はありません。Webコンテナーだけの再起動後もPHPページはtimeoutとなり、静的ファイルは200、CLIの実REST契約43件は成功しています。[共有処理の回帰・阻害要因](evidence/backend-streaming-regression.json)を参照してください。先の75件の画面検証と23枚の証跡には、この未完了の追加検証を含めません。
+本文増分がない審査経路用に `tests/reviewed-chat-ui-e2e.cjs` と合成HTTPの応答を追加しました。2026年10月2日に実WordPress・本機Edge・合成HTTPで5項目すべて成功し、管理・公開画面の審査待ち、審査前の本文非表示、確定本文の一回表示、JavaScript例外を確認しています。既存3スクリプトも同じ環境で再実行し、ページ26・浮窓26・表示と添付23・審査5の計80項目、JavaScript例外0、画面証跡27枚を確認しました。
 
-HTTPサービス復旧後の再実行では、審査待ち・確定回答の管理端と公開端の画像4枚、`reviewed-chat-ui-results.json` を出力します。モデル生成や審査自体は合成応答です。今回の試行後は設定ハッシュの一致、合成担当者・記事・MUローダーの不在を確認して復元しています。
+当初はWindows bind mountでPHP画面がtimeoutとなりました。再接続後にHTTPが回復したため、その時点の基線も測定しています。ユーザー承認を受け、統合リポジトリの `scripts/wordpress-runtime.ps1` で唯一のWindows checkoutから内容ハッシュ別のLinuxコードvolumeへ同期し、読取専用で実行しました。同期・ファイル削除の反映・冪等性・元のmountへの回復を確認しています。コピー対象から必須の`assets/vendor`を除外した初回の不備も修正し、最終受入では全静的ファイルを含めて再検証しました。[回帰記録](evidence/backend-streaming-regression.json)と統合リポジトリの `docs/wordpress-local-runtime.md` を参照してください。
+
+追加証跡は[管理画面の審査待ち](evidence/staff-review-waiting.png)、[管理画面の確定回答](evidence/staff-reviewed-final.png)、[公開画面の審査待ち](evidence/public-review-waiting.png)、[公開画面の確定回答](evidence/public-reviewed-final.png)、[結果JSON](evidence/reviewed-chat-ui-results.json)です。モデル生成や審査自体は合成応答です。全試行後に設定ハッシュの一致、合成担当者・記事・MUローダー・一時認証JSON・専用応答コンテナーの不在を確認しました。
 
 ## ローカルでの再実行
 
@@ -79,6 +81,7 @@ HTTPサービス復旧後の再実行では、審査待ち・確定回答の管�
 
 1. 既存の検証イメージで `tests/rich-upstream.php` をPHPのHTTPサーバーとして一時起動します。既存のDockerネットワーク内だけで、コンテナー名を `fourmix-wp-rich-fixture`、ポートを8080にします。ホストへの公開やDBは不要です。
 2. `wordpress-init` に明示的に `wp eval-file .../tests/chat-ui-fixture.php prepare-rich` を渡し、JSONをGit外の一時ファイルへ保存します。既定の初期化commandは実行しません。
+   実行用コピーを使う場合は、WP-CLIにも `-f .local/wordpress-runtime.compose.yaml` を追加し、応答サーバーには同じコードvolumeを読取専用でマウントします。浮窓検証はこの追加設定を自動検出します。
 3. `wp eval-file .../tests/chat-contract-integration.php` を実行します。
 4. 既存のPlaywrightを `FMI_PLAYWRIGHT_MODULE` で指定し、`node tests/chat-ui-e2e.cjs <一時JSON> <証跡先>`、`dock-ui-e2e.cjs`、`rich-ui-e2e.cjs`、`reviewed-chat-ui-e2e.cjs`を順番に実行します。本機Edgeを使用します。
 5. 結果にかかわらず `wp eval-file .../tests/chat-ui-fixture.php cleanup` を実行し、一時JSONを削除し、専用の合成HTTPコンテナーを停止します。設定・読み込みファイルの同時変更を検知した場合は上書きせず停止します。

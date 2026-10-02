@@ -1,0 +1,17 @@
+{
+  "environment": "本機Edge・実WordPress HTTP/REST・合成HTTP上流。実Studio/モデルは未使用。",
+  "checks": [
+    "staff：審査待ちを表示し本文を公開しない",
+    "staff：増分なしでも確定本文を重複せず表示する",
+    "public：審査待ちを表示し本文を公開しない",
+    "public：増分なしでも確定本文を重複せず表示する",
+    "管理・公開画面にJavaScript例外なし"
+  ],
+  "screenshots": [
+    "staff-review-waiting.png",
+    "staff-reviewed-final.png",
+    "public-review-waiting.png",
+    "public-reviewed-final.png"
+  ],
+  "errors": []
+}

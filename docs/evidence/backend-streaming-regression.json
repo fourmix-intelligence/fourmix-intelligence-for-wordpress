@@ -14,18 +14,20 @@
   "wordpress": {
     "realCliRestContractsPassed": 43,
     "upstream": "合成応答",
-    "reviewedBrowserTest": "未完了",
-    "browserFailure": "設定画面へのpage.gotoで30000ms timeout。本文・審査の追加検証に未到達。",
+    "reviewedBrowserTest": "5項目成功",
+    "totalBrowserChecks": 80,
+    "javascriptErrors": 0,
+    "screenshots": 27,
+    "newReviewScreenshots": 4,
     "webContainer": "fourmix-intelligence-v3-wordpress-1",
-    "healthFailure": "Health check exceeded timeout (5s)",
-    "webContainerRestart": "この既存Webコンテナーだけを再起動。DB・volume・その他のサービスは変更なし。",
-    "afterRestart": "ホストからwp-login.phpへの15秒HTTP要求もtimeout。",
-    "internalStaticAssetHttpStatus": 200,
-    "newReviewScreenshots": 0,
+    "health": "healthy",
+    "runtimeSourceHash": "721c49255152e8309617122cca4641c31f0715fef1ca2e87e1f3ea7a94f3211e",
+    "initialAttempt": "Windows bind mountでPHP画面がtimeout。再接続後にHTTPが回復した基線も測定。",
+    "recovery": "ユーザー承認済みのLinuxコード専用volume。ファイルハッシュ・更新・削除反映・冪等性・元のmountへの回復を実測。DBと既存volumeは保持。",
     "newFixturePhpSyntax": "成功",
     "newBrowserScriptSyntax": "成功",
     "composeConfig": "成功",
-    "nextCheck": "既存WordPress HTTPサービスを復旧してtests/reviewed-chat-ui-e2e.cjsを再実行。原因はPHP経路に絞れるが、今回の局所的な流式修正では確定していない。"
+    "evidence": "reviewed-chat-ui-results.json"
   },
   "cleanup": {
     "originalSettingsSha256": "21e8d7477329bdf6ea41a0ed9a6e693b633b629f84c2a3b5c16ab9eb03f72aff",

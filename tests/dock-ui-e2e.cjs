@@ -10,7 +10,9 @@ const root = path.resolve(__dirname, '../../../..');
 const base = 'http://localhost:48093/wp-admin/';
 const settings = base + 'admin.php?page=fourmix-intelligence-personal-settings';
 const pageChat = base + 'admin.php?page=fourmix-intelligence-operations&post_id=' + fixture.draft_id;
-const cli = (...args) => execFileSync('docker', ['compose', '-f', 'compose.yaml', '-f', 'compose.extensions.yaml', 'run', '--rm', '--no-deps', 'wordpress-init', 'wp', 'eval-file', '/var/www/html/wp-content/plugins/fourmix-intelligence/tests/chat-ui-fixture.php', ...args], {cwd: root, encoding: 'utf8', timeout: 30000, stdio: ['ignore', 'pipe', 'pipe']});
+const runtimeOverride = path.join(root, '.local/wordpress-runtime.compose.yaml');
+const composeFiles = ['-f', 'compose.yaml', '-f', 'compose.extensions.yaml', ...(fs.existsSync(runtimeOverride) ? ['-f', runtimeOverride] : [])];
+const cli = (...args) => execFileSync('docker', ['compose', ...composeFiles, 'run', '--rm', '--no-deps', '--entrypoint', 'wp', 'wordpress-init', 'eval-file', '/var/www/html/wp-content/plugins/fourmix-intelligence/tests/chat-ui-fixture.php', ...args], {cwd: root, encoding: 'utf8', timeout: 30000, stdio: ['ignore', 'pipe', 'pipe']});
 const inspect = () => JSON.parse(cli('inspect'));
 fs.mkdirSync(output, {recursive: true});
 (async () => {
