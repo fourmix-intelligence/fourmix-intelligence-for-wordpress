@@ -21,6 +21,13 @@ if ( preg_match( '#^/api/v3/ai/plugins/(synthetic-(?:internal|second|customer))/
 	header( 'Content-Type: application/x-ndjson' ); header( 'X-Accel-Buffering: no' ); ignore_user_abort( true );
 	$emit( 'run.created', array( 'conversation_id' => $conversation, 'customer_token' => str_repeat( 'a', 64 ), 'run_ticket' => 'synthetic-private-run-ticket' ) );
 	$emit( 'run.status', array( 'message' => '合成の逐次応答を準備しています' ) );
+	if ( str_starts_with( $message, '合成審査後の一括回答' ) ) {
+		$emit( 'run.status', array( 'phase' => 'answer_review', 'message' => '回答内容を確認しています' ) );
+		usleep( 1700000 );
+		$result = array( 'answer' => '審査後の合成確定回答です。実際のモデルは呼び出していません。', 'data' => array(), 'follow_up_questions' => array() );
+		$emit( 'assistant.message', array( 'text' => $result['answer'] ) );
+		$emit( 'run.completed', array( 'result' => $result ) ); exit;
+	}
 	if ( str_starts_with( $message, '合成遅延' ) ) { usleep( 3000000 ); }
 	$first = "これは合成応答です。実際のモデルは呼び出していません。\n";
 	$rest = str_starts_with( $message, '長文' ) ? str_repeat( "投稿内容を確認し、必要な手順を順番に整理します。長いメッセージもこの領域で読み進められます。\n", 12 ) . "```\n" . str_repeat( 'long-content-', 25 ) . "\n```\n" : 'ご相談を受け付けました: ' . mb_substr( explode( "\n", $message )[0], 0, 80 );

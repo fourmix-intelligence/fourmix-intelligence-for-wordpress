@@ -1,0 +1,46 @@
+{
+  "date": "2026-10-02",
+  "python": {
+    "commit": "2141fbf4d83020aeb048826133e05d7363ba9eae",
+    "relatedTestFiles": 13,
+    "passed": 183,
+    "subtestsPassed": 10,
+    "durationSeconds": 32.97,
+    "newStreamingContracts": 13,
+    "sourceCompile": "成功",
+    "provider": "既存OpenAI SDK橋渡しに同期iteratorを注入した模擬モデル。商品API・会話保存・利用記録も模擬。",
+    "realModelAndStudioIntegration": "未実施"
+  },
+  "wordpress": {
+    "realCliRestContractsPassed": 43,
+    "upstream": "合成応答",
+    "reviewedBrowserTest": "未完了",
+    "browserFailure": "設定画面へのpage.gotoで30000ms timeout。本文・審査の追加検証に未到達。",
+    "webContainer": "fourmix-intelligence-v3-wordpress-1",
+    "healthFailure": "Health check exceeded timeout (5s)",
+    "webContainerRestart": "この既存Webコンテナーだけを再起動。DB・volume・その他のサービスは変更なし。",
+    "afterRestart": "ホストからwp-login.phpへの15秒HTTP要求もtimeout。",
+    "internalStaticAssetHttpStatus": 200,
+    "newReviewScreenshots": 0,
+    "newFixturePhpSyntax": "成功",
+    "newBrowserScriptSyntax": "成功",
+    "composeConfig": "成功",
+    "nextCheck": "既存WordPress HTTPサービスを復旧してtests/reviewed-chat-ui-e2e.cjsを再実行。原因はPHP経路に絞れるが、今回の局所的な流式修正では確定していない。"
+  },
+  "cleanup": {
+    "originalSettingsSha256": "21e8d7477329bdf6ea41a0ed9a6e693b633b629f84c2a3b5c16ab9eb03f72aff",
+    "restoredSettingsSha256": "21e8d7477329bdf6ea41a0ed9a6e693b633b629f84c2a3b5c16ab9eb03f72aff",
+    "fixtureActive": false,
+    "fixtureLoaderPresent": false,
+    "syntheticChatUsers": 0,
+    "syntheticChatPosts": 0,
+    "temporaryAuthJsonRemoved": true
+  },
+  "brand": {
+    "source": "services/app/packages/platform-app/src/assets/brand/fourmix-intelligence-shopify-icon-1200.png",
+    "target": "assets/brand/fourmix-intelligence-icon.png",
+    "byteIdentical": true,
+    "bytes": 892571,
+    "sha256": "3FA8EBE998DB651151F7441E8682AE2CD83F8023E66E3D9A4DA23F5EA7977CB3"
+  }
+}

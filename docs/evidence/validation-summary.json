@@ -4,6 +4,7 @@
   "restContractChecks": 43,
   "browserChecks": {"chat": 26, "dock": 26, "richContentAndAttachments": 23, "total": 75, "javascriptErrors": 0, "screenshots": 23},
   "existingContractChecks": {"nativeOperations": 22, "studioSelection": 10},
+  "backendStreamingRegression": {"pythonCommit": "2141fbf4d83020aeb048826133e05d7363ba9eae", "pythonRelatedTests": 183, "pythonSubtests": 10, "mockedStreamingContracts": 13, "wordpressRestRechecked": 43, "newReviewedBrowserChecks": "未完了: 既存WordPressのPHPページがHTTP timeout。Webコンテナーのみ再起動後も復旧せず。", "evidence": "backend-streaming-regression.json"},
   "staticAndUnit": {"wordPressCodingStandardsPhpFiles": 24, "javascriptSyntaxFiles": 16, "publicRequestGuardChecks": 34, "executionJournal": "成功", "chatSession": "成功", "phpSyntax": "全本体・テストファイル成功"},
   "architecture": "中央AI・会話・添付・確認契約を再利用し、ページと浮窓は同じ会話DOM。HTTP転送設定を統合。docs/chat-architecture-and-performance.mdを参照。",
   "performance": {"scenario": "80件の合成履歴・201イベント・本機Edge・キャッシュ無効", "rendererCallsBefore": 14021, "rendererCallsAfter": 9, "closedDockRestRequests": 0, "closedDockHeavyweightScripts": 0, "historyExpansionVerified": 82, "windowListenersAddedAndRemoved": 60},

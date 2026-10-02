@@ -67,7 +67,11 @@ Mermaidは実際にSVGへ描画し、図の拡大・閉じる操作に対応し�
 
 今回の追加証跡は[浮窓の狭い画面](evidence/dock-tool-narrow.png)、[標準編集画面](evidence/dock-native-editor.png)、[表の狭い画面](evidence/rich-table-narrow.png)、[図の拡大](evidence/rich-diagram-expanded.png)、[添付プレビュー](evidence/rich-attachment-preview.png)、[公開添付](evidence/rich-public-attachment-narrow.png)です。コピー検証では本機のクリップボードを変更せず、ブラウザー内の合成Clipboardへ書きました。実スマートフォンのIME・仮想キーボードは未実測です。
 
-主体サーバーの一部のお客様向け処理には、審査後の完成回答を小分けにして逐次イベントとして送る既存処理があります。本プラグインでは文字再生を行いませんが、その上流処理の変更は共有Python担当の作業です。審査完了後の回答は一括メッセージとして区別する必要があり、このWordPress変更だけで実モデルの全経路の逐次応答が完成したとは扱いません。
+共有Python側でも、審査後の完成回答を12文字ごとに分割して再生する処理を削除しました。事前に現在の商品事実を確認した読み取り専用のEC-CUBE経路では生成中の本文増分を配信します。一般のお客様向けAIは従来どおり全回答の審査を行い、その後に確定メッセージを一括で返します。対応条件、stream非対応のモデル、取消・timeout・バッファの制限は[共有Pythonの逐次応答契約](../../../python/docs/customer-streaming-contract.md)を参照してください。実Studio・実モデルを使うWordPressとの総合接続試験は未実施です。
+
+本文増分がない審査経路用に `tests/reviewed-chat-ui-e2e.cjs` と合成HTTPの応答を追加しました。管理・公開画面の審査待ち、審査前の本文非表示、確定本文の一回表示、JavaScript例外を確認するスクリプトです。JavaScript・PHPの構文は確認済みですが、2026年10月2日の追加画面検証では既存WordPressのHTTPサービスが健康確認でtimeoutとなり、設定画面への遷移で失敗しました。上流のstream要求には到達しておらず、この追加検証の成功件数・画面証跡はありません。Webコンテナーだけの再起動後もPHPページはtimeoutとなり、静的ファイルは200、CLIの実REST契約43件は成功しています。[共有処理の回帰・阻害要因](evidence/backend-streaming-regression.json)を参照してください。先の75件の画面検証と23枚の証跡には、この未完了の追加検証を含めません。
+
+HTTPサービス復旧後の再実行では、審査待ち・確定回答の管理端と公開端の画像4枚、`reviewed-chat-ui-results.json` を出力します。モデル生成や審査自体は合成応答です。今回の試行後は設定ハッシュの一致、合成担当者・記事・MUローダーの不在を確認して復元しています。
 
 ## ローカルでの再実行
 
@@ -76,7 +80,7 @@ Mermaidは実際にSVGへ描画し、図の拡大・閉じる操作に対応し�
 1. 既存の検証イメージで `tests/rich-upstream.php` をPHPのHTTPサーバーとして一時起動します。既存のDockerネットワーク内だけで、コンテナー名を `fourmix-wp-rich-fixture`、ポートを8080にします。ホストへの公開やDBは不要です。
 2. `wordpress-init` に明示的に `wp eval-file .../tests/chat-ui-fixture.php prepare-rich` を渡し、JSONをGit外の一時ファイルへ保存します。既定の初期化commandは実行しません。
 3. `wp eval-file .../tests/chat-contract-integration.php` を実行します。
-4. 既存のPlaywrightを `FMI_PLAYWRIGHT_MODULE` で指定し、`node tests/chat-ui-e2e.cjs <一時JSON> <証跡先>`、`dock-ui-e2e.cjs`、`rich-ui-e2e.cjs`を順番に実行します。本機Edgeを使用します。
+4. 既存のPlaywrightを `FMI_PLAYWRIGHT_MODULE` で指定し、`node tests/chat-ui-e2e.cjs <一時JSON> <証跡先>`、`dock-ui-e2e.cjs`、`rich-ui-e2e.cjs`、`reviewed-chat-ui-e2e.cjs`を順番に実行します。本機Edgeを使用します。
 5. 結果にかかわらず `wp eval-file .../tests/chat-ui-fixture.php cleanup` を実行し、一時JSONを削除し、専用の合成HTTPコンテナーを停止します。設定・読み込みファイルの同時変更を検知した場合は上書きせず停止します。
 
 合成検証用MUローダーは一時的に読み込むファイルで、プラグイン本体からは読み込みません。検証中はモデル以外の外部HTTPとメールも止めます。検証の終了・復元後に普段のサイト設定へ戻ります。APIの支払いや外部公開は実行しません。
