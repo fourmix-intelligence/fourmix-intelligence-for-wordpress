@@ -170,7 +170,23 @@
     history.addEventListener('click', async () => {
       if (!state.conversation_id || busy || state.pending) { say(__('送信結果を確認した会話の履歴を読み込めます。')); return; }
       history.disabled = true;
-      try { const data = await options.history(state.conversation_id); state.messages = (data.messages || []).filter((row) => ['user', 'assistant'].includes(row.role)).map((row) => ({role: row.role, content: row.content, data: row.data})); save(); redraw(); say(__('会話履歴を読み込みました。')); } catch (error) { say(error.message); } finally { history.disabled = false; }
+      const conversation = state.conversation_id, turn = generation;
+      try {
+        const data = await options.history(conversation);
+        if (disposed || state.conversation_id !== conversation || turn !== generation) return;
+        const rows = (data.messages || []).filter((row) => ['user', 'assistant'].includes(row.role));
+        const same = (left, right) => left.role === right.role && left.content === right.content;
+        const prior = state.messages, aligned = rows.length === prior.length && rows.every((row, index) => same(row, prior[index]));
+        state.messages = rows.map((row, index) => {
+          // 本体の履歴に添付メタデータがない場合も、同じ会話の既知の表示を保つ。
+          // 重複文を位置で対応できない場合は、別の添付を推測して付けない。
+          const matches = aligned ? [prior[index]] : prior.filter((item) => same(row, item));
+          const known = matches.length === 1 && (aligned || rows.filter((item) => same(row, item)).length === 1) ? matches[0] : null;
+          return {role: row.role, content: row.content, data: row.data, attachments: row.attachments ?? known?.attachments,
+            follow_up_questions: row.follow_up_questions ?? known?.follow_up_questions};
+        });
+        save(); redraw(); say(__('会話履歴を読み込みました。'));
+      } catch (error) { say(error.message); } finally { history.disabled = false; }
     });
     const leave = () => { if (busy) { ++generation; controller?.abort(); controller = null; save(); unknown(); } };
     const resume = (event) => { if (event.persisted && state.pending) unknown(); };
