@@ -6,11 +6,18 @@ final class SettingsPage {
 	public function register(): void {
 		add_action( 'admin_menu', array( $this, 'menu' ) );
 		add_action( 'admin_init', array( $this, 'settings' ) );
+		add_action( 'update_option_fourmix_intelligence_settings', array( $this, 'updated' ), 10, 2 );
 		add_filter( 'plugin_action_links_' . plugin_basename( FOURMIX_INTELLIGENCE_FILE ), array( $this, 'action_links' ) );
 	}
 
 	public function menu(): void {
 		add_options_page( 'Fourmix Intelligence', 'Fourmix Intelligence', 'manage_options', 'fourmix-intelligence', array( $this, 'render' ) );
+	}
+
+	public function updated( mixed $previous, mixed $current ): void {
+		if ( is_array( $previous ) && is_array( $current ) && ! hash_equals( (string) ( $previous['bridge_secret'] ?? '' ), (string) ( $current['bridge_secret'] ?? '' ) ) ) {
+			delete_option( 'fourmix_intelligence_bridge_binding' );
+		}
 	}
 
 	public function settings(): void {
@@ -54,18 +61,18 @@ final class SettingsPage {
 		}
 		$bridge_secret = (string) ( $input['bridge_secret'] ?? '' );
 		if ( '' !== $bridge_secret && strlen( $bridge_secret ) < 32 ) {
-			add_settings_error( 'fourmix_intelligence_settings', 'bridge_secret', __( 'FinCube接続共有キーは32文字以上で入力してください。', 'fourmix-intelligence' ) );
+			add_settings_error( 'fourmix_intelligence_settings', 'bridge_secret', __( '業務接続の共有キーは32文字以上で入力してください。', 'fourmix-intelligence' ) );
 			$bridge_secret = (string) ( $current['bridge_secret'] ?? '' );
 		}
 		if ( '' !== $bridge_secret && ! hash_equals( (string) ( $current['bridge_secret'] ?? '' ), $bridge_secret ) ) {
-			delete_option( 'fourmix_intelligence_bridge_binding' );
+			unset( $current['native_tenant'], $current['native_connection'], $current['platform_url'], $current['portal_url'] );
 		}
 		return array(
-			'platform_url'      => esc_url_raw( (string) ( $input['platform_url'] ?? $current['platform_url'] ?? 'https://platform.ai.fourmix.co.jp' ) ),
-			'portal_url'        => esc_url_raw( (string) ( $input['portal_url'] ?? $current['portal_url'] ?? 'https://ai.fourmix.co.jp' ) ),
-			'native_tenant'     => sanitize_text_field( (string) ( $input['native_tenant'] ?? $current['native_tenant'] ?? '' ) ),
-			'native_connection' => sanitize_text_field( (string) ( $input['native_connection'] ?? $current['native_connection'] ?? '' ) ),
-			'url'               => esc_url_raw( (string) ( $input['url'] ?? 'https://mcp.ai.fourmix.co.jp' ) ),
+			'platform_url'      => (string) ( $current['platform_url'] ?? '' ),
+			'portal_url'        => (string) ( $current['portal_url'] ?? '' ),
+			'native_tenant'     => (string) ( $current['native_tenant'] ?? '' ),
+			'native_connection' => (string) ( $current['native_connection'] ?? '' ),
+			'url'               => esc_url_raw( (string) ( $current['url'] ?? 'https://mcp.ai.fourmix.co.jp' ) ),
 			'token'             => $token,
 			'agent'             => $agent,
 			'internal_agent'    => sanitize_key( (string) ( $input['internal_agent'] ?? '' ) ),
@@ -96,17 +103,10 @@ final class SettingsPage {
 		<form action="options.php" method="post"><?php settings_fields( 'fourmix_intelligence' ); ?>
 		<table class="form-table" role="presentation">
 		<?php
-		foreach ( array(
-			'platform_url'      => '認証 API の URL',
-			'portal_url'        => 'ログイン画面の URL',
-			'native_tenant'     => 'テナント ID',
-			'native_connection' => '共有の業務接続 ID',
-		) as $key => $label ) :
-			?>
-		<tr><th><label for="fmi-<?php echo esc_attr( $key ); ?>"><?php echo esc_html( $label ); ?></label></th><td><input class="regular-text" id="fmi-<?php echo esc_attr( $key ); ?>" name="fourmix_intelligence_settings[<?php echo esc_attr( $key ); ?>]" value="<?php echo esc_attr( $options[ $key ] ?? '' ); ?>"></td></tr>
-		<?php endforeach; ?>
-		<tr><th><label for="fmi-url"><?php esc_html_e( '接続先', 'fourmix-intelligence' ); ?></label></th><td><input class="regular-text" id="fmi-url" name="fourmix_intelligence_settings[url]" type="url" value="<?php echo esc_attr( $options['url'] ?? 'https://mcp.ai.fourmix.co.jp' ); ?>"></td></tr>
-		<tr><th><label for="fmi-token"><?php esc_html_e( '接続トークン', 'fourmix-intelligence' ); ?></label></th><td><input class="regular-text" id="fmi-token" name="fourmix_intelligence_settings[token]" type="password" autocomplete="new-password" value="" placeholder="<?php echo esc_attr( empty( $options['token'] ) ? __( '接続トークンを入力', 'fourmix-intelligence' ) : __( '設定済み（変更する場合のみ入力）', 'fourmix-intelligence' ) ); ?>"></td></tr>
+		$binding = \FourmixIntelligence\WordPress\Support\NativeConnectionBinding::status();
+		?>
+		<tr><th><?php esc_html_e( '接続状態', 'fourmix-intelligence' ); ?></th><td><strong><?php echo esc_html( $binding['connected'] ? $binding['workspace_name'] : __( '未接続', 'fourmix-intelligence' ) ); ?></strong><p class="description"><?php esc_html_e( '下記の共有キーと実行ユーザーを設定し、Fourmix IntelligenceのワークスペースでこのサイトのURLと共有キーを入力して接続してください。ログイン先と接続情報は自動で同期されます。', 'fourmix-intelligence' ); ?></p></td></tr>
+		<tr><th><label for="fmi-token"><?php esc_html_e( 'お客様向けAIの公開トークン', 'fourmix-intelligence' ); ?></label></th><td><input class="regular-text" id="fmi-token" name="fourmix_intelligence_settings[token]" type="password" autocomplete="new-password" value="" placeholder="<?php echo esc_attr( empty( $options['token'] ) ? __( 'お客様向けAIを公開する場合のみ入力', 'fourmix-intelligence' ) : __( '設定済み（変更する場合のみ入力）', 'fourmix-intelligence' ) ); ?>"></td></tr>
 		<tr><th><label for="fmi-agent"><?php esc_html_e( 'お客様向けAI', 'fourmix-intelligence' ); ?></label></th><td><select id="fmi-agent" name="fourmix_intelligence_settings[agent]"><option value=""><?php esc_html_e( 'Studioで作成したAIを選択', 'fourmix-intelligence' ); ?></option>
 		<?php
 		try {
@@ -140,8 +140,8 @@ final class SettingsPage {
 		foreach ( $post_types as $type ) :
 			?>
 			<label style="display:block"><input type="checkbox" name="fourmix_intelligence_settings[sync_post_types][]" value="<?php echo esc_attr( $type->name ); ?>" <?php checked( in_array( $type->name, (array) ( $options['sync_post_types'] ?? array( 'post', 'page', 'product' ) ), true ) ); ?>> <?php echo esc_html( $type->labels->name ); ?></label><?php endforeach; ?><p class="description"><?php esc_html_e( 'WooCommerceの商品在庫は索引へ同期せず、接客時に最新情報を確認します。', 'fourmix-intelligence' ); ?></p></td></tr>
-		<tr><th><label for="fmi-bridge-secret"><?php esc_html_e( 'FinCube接続共有キー', 'fourmix-intelligence' ); ?></label></th><td><input class="regular-text" id="fmi-bridge-secret" name="fourmix_intelligence_settings[bridge_secret]" type="password" minlength="32" autocomplete="new-password" placeholder="<?php echo esc_attr( empty( $options['bridge_secret'] ) ? __( '32文字以上の共有キーを入力', 'fourmix-intelligence' ) : __( '設定済み（変更する場合のみ入力）', 'fourmix-intelligence' ) ); ?>"><p class="description"><?php esc_html_e( 'Fourmix Intelligenceのワークスペース接続にも同じ共有キーを設定します。', 'fourmix-intelligence' ); ?></p></td></tr>
-		<tr><th><?php esc_html_e( 'FinCubeへ許可する業務', 'fourmix-intelligence' ); ?></th><td>
+		<tr><th><label for="fmi-bridge-secret"><?php esc_html_e( '業務接続の共有キー', 'fourmix-intelligence' ); ?></label></th><td><input class="regular-text" id="fmi-bridge-secret" name="fourmix_intelligence_settings[bridge_secret]" type="password" minlength="32" autocomplete="new-password" placeholder="<?php echo esc_attr( empty( $options['bridge_secret'] ) ? __( '32文字以上の共有キーを入力', 'fourmix-intelligence' ) : __( '設定済み（変更する場合のみ入力）', 'fourmix-intelligence' ) ); ?>"><p class="description"><?php esc_html_e( 'Fourmix Intelligenceのワークスペース接続にも同じ共有キーを設定します。別の環境へ接続し直す場合は、新しい共有キーを保存してください。接続情報だけが解除され、業務データと会話履歴は削除されません。', 'fourmix-intelligence' ); ?></p></td></tr>
+		<tr><th><?php esc_html_e( '接続に許可する業務', 'fourmix-intelligence' ); ?></th><td>
 		<?php
 		foreach ( array(
 			'content'   => '投稿・固定ページ',

@@ -33,6 +33,9 @@ final class NativeIdentity {
 		if ( ! current_user_can( 'edit_posts' ) ) {
 			wp_die( esc_html__( 'この画面を利用できません。', 'fourmix-intelligence' ), '', array( 'response' => 403 ) );
 		}
+		if ( ! Options::get( 'native_tenant', '' ) || ! Options::get( 'native_connection', '' ) || ! Options::get( 'portal_url', '' ) ) {
+			wp_die( esc_html__( '管理者にFourmix Intelligenceのワークスペースからサイトへの接続を依頼してください。', 'fourmix-intelligence' ), '', array( 'response' => 422 ) );
+		}
 		delete_transient( self::key() ); // 別の本人へのログイン開始後に以前の資格を流用しません。
 		$state      = bin2hex( random_bytes( 32 ) );
 		$verifier   = rtrim( strtr( base64_encode( random_bytes( 48 ) ), '+/', '-_' ), '=' );
@@ -162,7 +165,7 @@ final class NativeIdentity {
 		if ( $token ) {
 			$args['headers']['Authorization'] = 'Bearer ' . $token;
 		}
-		$local = defined( 'WP_DEBUG' ) && WP_DEBUG && defined( 'FOURMIX_INTELLIGENCE_PLATFORM_URL' ) && str_starts_with( $url, rtrim( constant( 'FOURMIX_INTELLIGENCE_PLATFORM_URL' ), '/' ) . '/' ) && in_array( wp_parse_url( $url, PHP_URL_HOST ), array( 'platform', 'localhost', '127.0.0.1' ), true );
+		$local = Options::local_url( $url, 'platform_url' );
 		$reply = $local ? wp_remote_request( $url, $args ) : wp_safe_remote_request( $url, $args );
 		$code  = is_wp_error( $reply ) ? 502 : wp_remote_retrieve_response_code( $reply );
 		if ( $code < 200 || $code >= 300 ) {

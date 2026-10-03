@@ -17,6 +17,25 @@ final class NativeBridgeController {
 	public function routes(): void {
 		register_rest_route(
 			'fourmix-intelligence/v1',
+			'/connection',
+			array(
+				array(
+					'methods'             => 'GET',
+					'callback'            => static fn() => new WP_REST_Response( \FourmixIntelligence\WordPress\Support\NativeConnectionBinding::status() ),
+					'permission_callback' => array( $this, 'authenticate' ),
+				),
+				array(
+					'methods'             => 'PUT',
+					'callback'            => static function ( WP_REST_Request $request ) {
+						$result = \FourmixIntelligence\WordPress\Support\NativeConnectionBinding::configure( $request );
+						return is_wp_error( $result ) ? $result : new WP_REST_Response( $result );
+					},
+					'permission_callback' => array( $this, 'authenticate' ),
+				),
+			)
+		);
+		register_rest_route(
+			'fourmix-intelligence/v1',
 			'/manifest',
 			array(
 				'methods'             => 'GET',
@@ -42,7 +61,7 @@ final class NativeBridgeController {
 		$workspace  = (string) $request->get_header( 'x-fourmix-workspace' );
 		$connection = (string) $request->get_header( 'x-fourmix-connection' );
 		$signature  = (string) $request->get_header( 'x-fourmix-signature' );
-		$uuid       = '/^[0-9a-f-]{36}$/i';
+		$uuid       = '/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i';
 		if ( strlen( $secret ) < 32 || ! ctype_digit( $timestamp ) || abs( time() - (int) $timestamp ) > 300 || ! preg_match( $uuid, $nonce ) || ! preg_match( $uuid, $workspace ) || ! preg_match( $uuid, $connection ) ) {
 			return new \WP_Error( 'forbidden', __( '署名を確認できませんでした。', 'fourmix-intelligence' ), array( 'status' => 403 ) );
 		}
@@ -54,20 +73,9 @@ final class NativeBridgeController {
 		if ( ! hash_equals( 'v1=' . hash_hmac( 'sha256', $canonical, $secret ), $signature ) ) {
 			return new \WP_Error( 'forbidden', __( '署名を確認できませんでした。', 'fourmix-intelligence' ), array( 'status' => 403 ) );
 		}
-		$bound = (array) get_option( 'fourmix_intelligence_bridge_binding', array() );
-		if ( empty( $bound ) ) {
-			add_option(
-				'fourmix_intelligence_bridge_binding',
-				array(
-					'workspace'  => $workspace,
-					'connection' => $connection,
-				),
-				'',
-				false
-			);
-			$bound = (array) get_option( 'fourmix_intelligence_bridge_binding', array() );
-		}
-		if ( ! hash_equals( (string) ( $bound['workspace'] ?? '' ), $workspace ) || ! hash_equals( (string) ( $bound['connection'] ?? '' ), $connection ) ) {
+		$bound = Options::binding();
+		$setup = in_array( $request->get_route(), array( '/fourmix-intelligence/v1/manifest', '/fourmix-intelligence/v1/connection' ), true );
+		if ( ( ! $bound && ! $setup ) || ( $bound && ( ! hash_equals( (string) ( $bound['workspace'] ?? '' ), $workspace ) || ! hash_equals( (string) ( $bound['connection'] ?? '' ), $connection ) ) ) ) {
 			return new \WP_Error( 'bound', __( 'このサイトは別のワークスペースへ接続済みです。', 'fourmix-intelligence' ), array( 'status' => 403 ) );
 		}
 		if ( get_option( $key, 0 ) && get_option( $key, 0 ) <= time() ) {
@@ -98,6 +106,7 @@ final class NativeBridgeController {
 					'version' => FOURMIX_INTELLIGENCE_VERSION,
 				),
 				'revision'     => 1,
+				'features'     => array( 'native_connection_bootstrap_v1' ),
 				'capabilities' => $this->capabilities(),
 			)
 		);
