@@ -31,14 +31,14 @@
   }
   function unavailable(message, loginUrl = null, denied = false) {
     chat?.dispose(); chat = null; context.hidden = true; host.classList.remove('fmi-chat');
-    const prompt = node('div', 'fmi-staff-setup'); prompt.append(node('p', '', message || __('相談を始めるには、本人のAI設定を確認してください。')));
-    const link = node('a', 'button button-primary', __('本人のAI設定を開く')); link.href = loginUrl || config.settingsUrl; if (loginUrl) link.textContent = __('Fourmix Intelligence にログイン'); if (!denied) prompt.append(link); host.replaceChildren(prompt);
+    const prompt = node('div', 'fmi-staff-setup'); prompt.append(node('p', '', message || __('相談を始めるには、社内向けAIの設定を確認してください。')));
+    const link = node('a', 'button button-primary', __('社内向けAIの設定を開く')); link.href = loginUrl || config.settingsUrl; if (loginUrl) link.textContent = __('Fourmix Intelligence にログイン'); if (!denied) prompt.append(link); host.replaceChildren(prompt);
   }
   async function request(action, body, signal) {
     const reply = await fetch(config.endpoint + action, {method: 'POST', credentials: 'same-origin', signal, headers: {'Content-Type': 'application/json', 'X-WP-Nonce': config.nonce}, body: JSON.stringify(body || {})});
     const data = await reply.json();
     if (!reply.ok) {
-      const error = new Error(data.message || __('本人の接続と権限を確認してください。'));
+      const error = new Error(data.message || __('Fourmix Intelligence のログインとワークスペースの権限を確認してください。'));
       error.status = reply.status; error.loginUrl = data.login_url;
       if (reply.status === 401 || reply.status === 403) {
         ++revision; unavailable(error.message, data.login_url, reply.status === 403);

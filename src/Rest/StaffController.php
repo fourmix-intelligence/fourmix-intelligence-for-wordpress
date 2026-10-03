@@ -85,6 +85,15 @@ final class StaffController {
 		);
 	}
 
+	/** 現在のログインと利用可能な AI を照合し、このアカウントの選択だけを返します。 */
+	public function selected_agent(): string {
+		$selection = $this->agent_selection( ( new Client() )->catalog( 'internal', $this->token() ) );
+		if ( '' === $selection['selected_agent'] ) {
+			throw new \RuntimeException( esc_html__( '利用する社内向けAIを選択してください。', 'fourmix-intelligence' ), 403 );
+		}
+		return $selection['selected_agent'];
+	}
+
 	public function select( WP_REST_Request $request ): WP_REST_Response {
 		try {
 			$agents = ( new Client() )->catalog( 'internal', $this->token() );

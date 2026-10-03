@@ -40,7 +40,7 @@ final class OperationsPage {
 		?>
 		<div class="wrap" id="fmi-operations">
 			<h1 class="fmi-brand-heading"><img src="<?php echo esc_url( FOURMIX_INTELLIGENCE_URL . 'assets/brand/fourmix-intelligence-icon.png' ); ?>" alt="" width="36" height="36"><?php esc_html_e( 'Fourmix Intelligence 運営支援', 'fourmix-intelligence' ); ?></h1>
-			<p class="fmi-introduction"><?php esc_html_e( '業務についてAIに相談できます。操作が必要な場合は、内容を確認してから実行します。', 'fourmix-intelligence' ); ?> <a href="<?php echo esc_url( admin_url( 'admin.php?page=fourmix-intelligence-personal-settings' ) ); ?>"><?php esc_html_e( '本人のAI設定', 'fourmix-intelligence' ); ?></a></p>
+			<p class="fmi-introduction"><?php esc_html_e( '業務についてAIに相談できます。操作が必要な場合は、内容を確認してから実行します。', 'fourmix-intelligence' ); ?> <a href="<?php echo esc_url( admin_url( 'admin.php?page=fourmix-intelligence-personal-settings' ) ); ?>"><?php esc_html_e( '社内向けAIの設定', 'fourmix-intelligence' ); ?></a></p>
 			<div id="fmi-chat-page"><div id="fmi-chat"></div></div>
 		</div>
 		<?php

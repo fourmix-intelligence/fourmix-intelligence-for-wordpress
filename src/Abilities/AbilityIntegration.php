@@ -77,11 +77,12 @@ final class AbilityIntegration {
 				throw new \RuntimeException( esc_html__( '編集担当者の権限が必要です。', 'fourmix-intelligence' ) );
 			}
 			$request = new \WP_REST_Request( 'POST' );
-			$request->set_param( 'agent', get_user_meta( get_current_user_id(), 'fourmix_intelligence_internal_agent', true ) );
+			$staff   = new \FourmixIntelligence\WordPress\Rest\StaffController();
+			$request->set_param( 'agent', $staff->selected_agent() );
 			$request->set_param( 'message', $input['message'] );
-			$result = ( new \FourmixIntelligence\WordPress\Rest\StaffController() )->chat( $request );
+			$result = $staff->chat( $request );
 			if ( 200 !== $result->get_status() ) {
-				throw new \RuntimeException( esc_html__( '運営支援画面で本人のAIに接続してください。', 'fourmix-intelligence' ) );
+				throw new \RuntimeException( esc_html__( '社内向けAIの設定で Fourmix Intelligence にログインし、利用するAIを選択してください。', 'fourmix-intelligence' ) );
 			}
 			$response = $result->get_data();
 			return array(

@@ -23,5 +23,5 @@
     catch (error) { restore({agents: []}); status.textContent = error.message; }
     finally { busy = false; }
   });
-  request('catalog').then((data) => { if (busy) return; restore(data); if (!data.agents.length) status.textContent = __('本人のAIに接続してください。'); }).catch((error) => { status.textContent = error.message; });
+  request('catalog').then((data) => { if (busy) return; restore(data); if (!data.agents.length) status.textContent = __('Fourmix Intelligence にログインし、社内向けAIを選択してください。'); }).catch((error) => { status.textContent = error.message; });
 })();

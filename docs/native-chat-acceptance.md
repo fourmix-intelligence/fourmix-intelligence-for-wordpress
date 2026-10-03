@@ -4,7 +4,13 @@
 
 ## 人による確認入口
 
-既存の統合環境のWordPressは `http://localhost:48093` です。管理画面の **Fourmix Intelligence → 本人のAI設定** で、本人の短期接続と社内向けAIを選択します。`/wp-admin/admin.php?page=fourmix-intelligence-personal-settings` が入口です。
+本タスクの候補版は独立した WordPress `http://localhost:18193` で検証します。既存の統合環境 `http://localhost:48093` は切り替えていません。候補版の管理画面 **Fourmix Intelligence → 社内向けAIの設定** で、Fourmix Intelligence にログインし、ワークスペースの社内向けAIを選択します。既存 URL `/wp-admin/admin.php?page=fourmix-intelligence-personal-settings` は維持しています。
+
+### ログインと AI 選択の追補検証
+
+独立した合成 WordPress で `wp eval-file tests/ability-identity-integration.php` を実行します。同じ WordPress ユーザーが複数の Fourmix Intelligence アカウントを使うときの AI 選択、旧共用キーを使わないこと、未ログイン・失効・接続不一致・AI の利用不可を検証します。外部の本人確認と一覧は合成応答とし、モデルは呼び出しません。実画面の案内は `tests/identity-labels-e2e.cjs` で設定ページ・相談ページ・浮窓を確認します。
+
+WordPress Ability の選択元は追補で修正しています。ただし、従来の `ask()` がチャットに必要な会話の識別子を渡さない問題は今回の修正範囲に含めていません。Ability の会話完了を検証したとは扱いません。
 
 **AIに相談** は会話専用のページです。`/wp-admin/admin.php?page=fourmix-intelligence-operations`、または編集権限を持つ利用者の管理画面右下の公式アイコンから開けます。ページと浮窓は同じDOM・会話・確認経路を使い、入力や添付を維持します。未設定時は設定への案内だけを表示します。直接操作の従来のカタログは `fourmix-intelligence-native-operations` に移しました。
 

@@ -68,7 +68,7 @@ final class StaffChat {
 			<section id="fmi-dock-panel" class="fmi-dock-panel" role="dialog" aria-modal="false" aria-labelledby="fmi-dock-title" hidden>
 				<header class="fmi-dock-header"><img src="<?php echo esc_url( FOURMIX_INTELLIGENCE_URL . 'assets/brand/fourmix-intelligence-icon.png' ); ?>" alt="" width="28" height="28"><span id="fmi-dock-title">Fourmix Intelligence</span><button id="fmi-dock-close" type="button" aria-label="<?php esc_attr_e( '相談を閉じる', 'fourmix-intelligence' ); ?>">×</button></header>
 				<div id="fmi-dock-body"></div>
-				<footer class="fmi-dock-footer"><a href="<?php echo esc_url( admin_url( 'admin.php?page=fourmix-intelligence-operations' ) ); ?>"><?php esc_html_e( 'ページで相談', 'fourmix-intelligence' ); ?></a><a href="<?php echo esc_url( admin_url( 'admin.php?page=fourmix-intelligence-personal-settings' ) ); ?>"><?php esc_html_e( '本人のAI設定', 'fourmix-intelligence' ); ?></a></footer>
+				<footer class="fmi-dock-footer"><a href="<?php echo esc_url( admin_url( 'admin.php?page=fourmix-intelligence-operations' ) ); ?>"><?php esc_html_e( 'ページで相談', 'fourmix-intelligence' ); ?></a><a href="<?php echo esc_url( admin_url( 'admin.php?page=fourmix-intelligence-personal-settings' ) ); ?>"><?php esc_html_e( '社内向けAIの設定', 'fourmix-intelligence' ); ?></a></footer>
 			</section>
 			<button id="fmi-dock-toggle" type="button" aria-expanded="false" aria-controls="fmi-dock-panel" aria-label="<?php esc_attr_e( 'Fourmix Intelligenceの相談を開く', 'fourmix-intelligence' ); ?>"><img src="<?php echo esc_url( FOURMIX_INTELLIGENCE_URL . 'assets/brand/fourmix-intelligence-icon.png' ); ?>" alt="" width="36" height="36"></button>
 		</div>

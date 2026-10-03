@@ -118,7 +118,7 @@ final class SettingsPage {
 		}
 		?>
 		</select><p class="description"><?php esc_html_e( 'AIはすべてFourmix IntelligenceのStudioで作成します。ここでは公開するAIだけを選びます。', 'fourmix-intelligence' ); ?></p></td></tr>
-		<tr><th><?php esc_html_e( '社内向けAI', 'fourmix-intelligence' ); ?></th><td><a href="<?php echo esc_url( admin_url( 'admin.php?page=fourmix-intelligence-personal-settings' ) ); ?>"><?php esc_html_e( '本人のAI設定を開く', 'fourmix-intelligence' ); ?></a><p class="description"><?php esc_html_e( '本人が接続した後、Studioの社内向けAIから選択します。', 'fourmix-intelligence' ); ?></p></td></tr>
+		<tr><th><?php esc_html_e( '社内向けAI', 'fourmix-intelligence' ); ?></th><td><a href="<?php echo esc_url( admin_url( 'admin.php?page=fourmix-intelligence-personal-settings' ) ); ?>"><?php esc_html_e( '社内向けAIの設定を開く', 'fourmix-intelligence' ); ?></a><p class="description"><?php esc_html_e( 'Fourmix Intelligence にログイン後、ワークスペースの社内向けAIから選択します。', 'fourmix-intelligence' ); ?></p></td></tr>
 		<tr><th><?php esc_html_e( '接続の実行ユーザー', 'fourmix-intelligence' ); ?></th><td>
 		<?php
 		wp_dropdown_users(
