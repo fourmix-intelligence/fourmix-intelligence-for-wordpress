@@ -6,11 +6,15 @@ use FourmixIntelligence\WordPress\Http\Client;
 use FourmixIntelligence\WordPress\Support\ChatSession;
 use FourmixIntelligence\WordPress\Support\ExecutionJournal;
 use FourmixIntelligence\WordPress\Support\Options;
+use FourmixIntelligence\WordPress\Support\NativeIdentity;
 use WP_REST_Request;
 use WP_REST_Response;
 
 /** 本人の短期接続とWordPress権限を使う管理画面専用の入口。 */
 final class StaffController {
+	private ?array $current_identity = null;
+	private ?string $current_token   = null;
+
 	public function register(): void {
 		add_action( 'rest_api_init', array( $this, 'routes' ) );
 	}
@@ -30,53 +34,33 @@ final class StaffController {
 	}
 
 	public function authorize( WP_REST_Request $request ): bool {
+		$this->current_token    = null;
+		$this->current_identity = null; // 同じ HTTP 要求内だけで本人確認の結果を再利用します。
 		return current_user_can( 'edit_posts' ) && (bool) wp_verify_nonce( $request->get_header( 'x-wp-nonce' ), 'wp_rest' );
 	}
 
+	private function current_identity(): array {
+		$this->current_token           ??= NativeIdentity::token();
+		return $this->current_identity ??= NativeIdentity::current( false, $this->current_token );
+	}
+
 	private function session_key(): string {
-		return 'fmi_staff_' . hash_hmac( 'sha256', get_current_blog_id() . ':' . get_current_user_id() . ':' . wp_get_session_token(), wp_salt( 'auth' ) );
+		return NativeIdentity::scope( $this->current_identity() );
 	}
 
 	private function token(): string {
-		$value = (array) get_transient( $this->session_key() );
-		$iv    = base64_decode( (string) ( $value['iv'] ?? '' ), true );
-		$tag   = base64_decode( (string) ( $value['tag'] ?? '' ), true );
-		$token = isset( $value['encrypted'] ) && is_string( $iv ) && 12 === strlen( $iv ) && is_string( $tag ) && 16 === strlen( $tag ) ? openssl_decrypt( $value['encrypted'], 'aes-256-gcm', hash( 'sha256', wp_salt( 'auth' ), true ), 0, $iv, $tag ) : false;
-		if ( ! $token ) {
-			throw new \RuntimeException( esc_html__( '本人の接続が必要です。15分を過ぎた場合は接続し直してください。', 'fourmix-intelligence' ) );
-		}
-		return $token;
+		$this->current_identity();
+		return $this->current_token;
 	}
 
 	public function connect( WP_REST_Request $request ): WP_REST_Response {
-		try {
-			$token = (string) $request->get_param( 'token' );
-			if ( strlen( $token ) < 16 || strlen( $token ) > 4096 ) {
-				throw new \RuntimeException( esc_html__( '本人のアクセストークンを確認してください。', 'fourmix-intelligence' ) );
-			}
-			$agents = ( new Client() )->catalog( 'internal', $token );
-			if ( ! $agents ) {
-				throw new \RuntimeException( esc_html__( '利用できる社内向けStudio AIがありません。', 'fourmix-intelligence' ) );
-			}
-			$iv        = random_bytes( 12 );
-			$tag       = '';
-			$encrypted = openssl_encrypt( $token, 'aes-256-gcm', hash( 'sha256', wp_salt( 'auth' ), true ), 0, $iv, $tag );
-			if ( false === $encrypted ) {
-				throw new \RuntimeException( esc_html__( '本人の接続を保存できませんでした。', 'fourmix-intelligence' ) );
-			}
-			set_transient(
-				$this->session_key(),
-				array(
-					'encrypted' => $encrypted,
-					'iv'        => base64_encode( $iv ),
-					'tag'       => base64_encode( $tag ),
-				),
-				15 * MINUTE_IN_SECONDS
-			);
-			return $this->reply( $this->agent_selection( $agents ) );
-		} catch ( \Throwable $error ) {
-			return $this->error( $error );
-		}
+		return $this->reply(
+			array(
+				'state'     => 'login_required',
+				'login_url' => NativeIdentity::login_url(),
+			),
+			401
+		);
 	}
 
 	private function safe_agents( array $agents ): array {
@@ -91,7 +75,10 @@ final class StaffController {
 	}
 
 	private function agent_selection( array $agents ): array {
-		$selected = (string) get_user_meta( get_current_user_id(), 'fourmix_intelligence_internal_agent', true );
+		if ( ! $agents ) {
+			throw new \RuntimeException( esc_html__( 'このアカウントで利用できる社内向け Studio AI がありません。ワークスペースの管理者に確認してください。', 'fourmix-intelligence' ), 403 );
+		}
+		$selected = (string) get_user_meta( get_current_user_id(), 'fourmix_intelligence_internal_agent_' . hash( 'sha256', $this->session_key() ), true );
 		return array(
 			'agents'         => $this->safe_agents( $agents ),
 			'selected_agent' => in_array( $selected, wp_list_pluck( $agents, 'name' ), true ) ? $selected : '',
@@ -105,7 +92,7 @@ final class StaffController {
 			if ( ! in_array( $agent, wp_list_pluck( $agents, 'name' ), true ) ) {
 				throw new \RuntimeException( esc_html__( '利用できる社内向けAIを選択してください。', 'fourmix-intelligence' ) );
 			}
-			update_user_meta( get_current_user_id(), 'fourmix_intelligence_internal_agent', $agent );
+			update_user_meta( get_current_user_id(), 'fourmix_intelligence_internal_agent_' . hash( 'sha256', $this->session_key() ), $agent );
 			return $this->reply( $this->agent_selection( $agents ) );
 		} catch ( \Throwable $error ) {
 			return $this->error( $error );
@@ -120,12 +107,12 @@ final class StaffController {
 		try {
 			$selection = $this->agent_selection( ( new Client() )->catalog( 'internal', $this->token() ) );
 		} catch ( \Throwable $error ) {
-			// 期限切れの本人接続は復元せず、業務の権限一覧だけを返します。
+			return $this->error( $error );
 		}
 		return $this->reply(
 			$selection + array(
 				'context'      => $this->record_context( absint( $request->get_param( 'post_id' ) ) ),
-				'operations'   => ( new NativeBridgeController() )->capabilities(),
+				'operations'   => $this->local_operations( $selection['selected_agent'] ),
 				'woocommerce'  => class_exists( 'WooCommerce' ),
 				'appointments' => class_exists( 'WC_Bookings' ) ? 'detected_not_enabled' : 'not_detected',
 			)
@@ -138,7 +125,7 @@ final class StaffController {
 		if ( ! in_array( $agent, wp_list_pluck( ( new Client() )->catalog( 'internal', $token ), 'name' ), true ) ) {
 			throw new \RuntimeException( esc_html__( 'このAIの利用権限を確認できません。接続と選択を確認してください。', 'fourmix-intelligence' ) );
 		}
-		return array( $token, $agent, $this->session_key() . '_' . hash( 'sha256', $token . ':' . $agent ) );
+		return array( $token, $agent, $this->session_key() . '_' . hash( 'sha256', $agent ) );
 	}
 
 	private function record_context( int $id ): ?array {
@@ -157,12 +144,12 @@ final class StaffController {
 		list( $token, $agent, $scope ) = $this->identity( $request );
 		$state                         = (array) get_transient( $scope );
 		if ( empty( $state['thread_id'] ) || ! hash_equals( $state['thread_id'], (string) $request->get_param( 'thread_id' ) ) ) {
-			throw new \RuntimeException( 'attachment_thread' );
+			throw new \RuntimeException( esc_html__( 'attachment_thread', 'fourmix-intelligence' ) );
 		}
 		$id        = (string) ( $state['conversation_id'] ?? '' );
 		$requested = (string) $request->get_param( 'conversation_id' );
 		if ( $requested && ! hash_equals( $id, $requested ) ) {
-			throw new \RuntimeException( 'attachment_conversation' );
+			throw new \RuntimeException( esc_html__( 'attachment_conversation', 'fourmix-intelligence' ) );
 		}
 		$manifest = ( new Client() )->request( 'GET', '/api/v3/ai/plugins/' . rawurlencode( $agent ) . '/metadata', null, $token );
 		$policy   = \FourmixIntelligence\WordPress\Support\Attachments::policy( (array) ( $manifest['attachments'] ?? array() ) );
@@ -170,7 +157,7 @@ final class StaffController {
 			$conversation = ( new Client() )->request( 'POST', '/api/v3/agent-conversations/' . rawurlencode( $agent ) . '/resolve', array(), $token );
 			$id           = (string) ( $conversation['identify'] ?? '' );
 			if ( ! \FourmixIntelligence\WordPress\Support\Attachments::uuid( $id ) ) {
-				throw new \RuntimeException( 'attachment_conversation' );
+				throw new \RuntimeException( esc_html__( 'attachment_conversation', 'fourmix-intelligence' ) );
 			}
 			$state['conversation_id'] = $id;
 			set_transient( $scope, $state, 15 * MINUTE_IN_SECONDS );
@@ -237,15 +224,16 @@ final class StaffController {
 			if ( empty( $state['thread_id'] ) || ! hash_equals( $state['thread_id'], (string) $request->get_param( 'thread_id' ) ) ) {
 				throw new \RuntimeException( esc_html__( '会話が切り替わっています。画面を開き直してください。', 'fourmix-intelligence' ) );
 			}
-			update_user_meta( get_current_user_id(), 'fourmix_intelligence_internal_agent', $agent );
+			update_user_meta( get_current_user_id(), 'fourmix_intelligence_internal_agent_' . hash( 'sha256', $this->session_key() ), $agent );
 			$message = sanitize_textarea_field( (string) $request->get_param( 'message' ) );
 			if ( '' === trim( $message ) || mb_strlen( $message ) > 5000 ) {
 				throw new \RuntimeException( esc_html__( '依頼を入力してください。', 'fourmix-intelligence' ) );
 			}
 			$context = array(
-				'site'    => home_url(),
-				'channel' => 'wordpress-admin',
-				'actor'   => get_current_user_id(),
+				'site'        => home_url(),
+				'channel'     => 'wordpress-admin',
+				'local_actor' => get_current_user_id(),
+				'account_id'  => $this->current_identity()['account_id'],
 			);
 			$post_id = absint( $request->get_param( 'post_id' ) );
 			if ( true === $request->get_param( 'include_context' ) ) {
@@ -348,6 +336,10 @@ final class StaffController {
 	}
 
 	private function validate_native_action( array $preview ): void {
+		NativeIdentity::current( true, $this->token() );
+		if ( (string) ( $preview['connection_id'] ?? '' ) !== (string) Options::get( 'native_connection', '' ) ) {
+			return; // Studio が許可した他サービスの操作は、そのサービス側で検証します。
+		}
 		$name = (string) ( $preview['operation_id'] ?? '' );
 		$args = (array) ( $preview['arguments'] ?? array() );
 		unset( $args['idempotency_key'] );
@@ -390,14 +382,43 @@ final class StaffController {
 		}
 	}
 
+	private function local_operations( string $agent ): array {
+		if ( '' === $agent ) {
+			return array(); }
+		$identity = $this->current_identity();
+		$manifest = ( new Client() )->request( 'GET', '/api/v3/ai/plugins/' . rawurlencode( $agent ) . '/metadata', null, $this->token() );
+		$grants   = array();
+		foreach ( (array) ( $manifest['tools'] ?? array() ) as $tool ) {
+			if ( is_array( $tool ) && (string) ( $tool['connection_id'] ?? '' ) === (string) Options::get( 'native_connection', '' ) ) {
+				$grants[] = $tool['operation_id'] ?? ''; }
+		}
+		return array_values( array_filter( ( new NativeBridgeController() )->capabilities(), static fn( $item ) => in_array( $item['name'], $grants, true ) && ( $item['read_only'] || ! empty( $identity['business_write'] ) ) ) );
+	}
+
+	private function local_agent( WP_REST_Request $request, string $operation ): string {
+		list( $token, $agent ) = $this->identity( $request );
+		$manifest              = ( new Client() )->request( 'GET', '/api/v3/ai/plugins/' . rawurlencode( $agent ) . '/metadata', null, $token );
+		foreach ( (array) ( $manifest['tools'] ?? array() ) as $tool ) {
+			if ( is_array( $tool ) && ( $tool['operation_id'] ?? '' ) === $operation && (string) ( $tool['connection_id'] ?? '' ) === (string) Options::get( 'native_connection', '' ) ) {
+				return $agent;
+			}
+		}
+		throw new \RuntimeException( esc_html__( 'この操作は選択した AI から利用できません。Studio の会話から依頼してください。', 'fourmix-intelligence' ), 403 );
+	}
+
 	public function preview( WP_REST_Request $request ): WP_REST_Response {
 		try {
+			$this->current_identity();
 			$name   = (string) $request->get_param( 'operation' );
 			$args   = (array) $request->get_param( 'arguments' );
 			$bridge = new NativeBridgeController();
 			$bridge->validate_operation( $name, $args );
 			$definition = array_values( array_filter( $bridge->capabilities(), static fn( $item ) => $item['name'] === $name ) )[0];
+			if ( ! $definition['read_only'] ) {
+				NativeIdentity::current( true, $this->token() ); }
+			$agent = $this->local_agent( $request, $name );
 			if ( $definition['read_only'] ) {
+				NativeIdentity::current( false, $this->token() );
 				return $this->reply(
 					array(
 						'state' => 'succeeded',
@@ -405,9 +426,11 @@ final class StaffController {
 					)
 				);
 			}
+			NativeIdentity::current( true, $this->token() );
 			$id     = wp_generate_uuid4();
 			$intent = array(
 				'operation'  => $name,
+				'agent'      => $agent,
 				'arguments'  => $args,
 				'actor'      => get_current_user_id(),
 				'snapshot'   => $this->snapshot( $name, $args ),
@@ -444,11 +467,15 @@ final class StaffController {
 
 	public function confirm( WP_REST_Request $request ): WP_REST_Response {
 		try {
-			$id     = (string) $request->get_param( 'confirmation_id' );
-			$intent = get_option( 'fmi_preview_' . hash( 'sha256', $this->session_key() . $id ), array() );
+			$this->current_identity = NativeIdentity::current( true, $this->token() );
+			$id                     = (string) $request->get_param( 'confirmation_id' );
+			$intent                 = get_option( 'fmi_preview_' . hash( 'sha256', $this->session_key() . $id ), array() );
 			if ( true !== $request->get_param( 'approved' ) || ! $intent || get_current_user_id() !== $intent['actor'] || time() > $intent['expires_at'] ) {
 				throw new \RuntimeException( esc_html__( '本人による有効な確認が必要です。', 'fourmix-intelligence' ) );
 			}
+			$agent = $this->local_agent( $request, $intent['operation'] );
+			if ( ( $intent['agent'] ?? '' ) !== $agent ) {
+				throw new \RuntimeException( esc_html__( '確認時の AI が変更されています。', 'fourmix-intelligence' ), 403 ); }
 			$bridge = new NativeBridgeController();
 			$bridge->validate_operation( $intent['operation'], $intent['arguments'] );
 			$journal  = new ExecutionJournal();
@@ -467,6 +494,7 @@ final class StaffController {
 					if ( ! hash_equals( $intent['snapshot'], $this->snapshot( $intent['operation'], $intent['arguments'] ) ) ) {
 						throw new \RuntimeException( esc_html__( '対象が変更されています。もう一度プレビューしてください。', 'fourmix-intelligence' ) );
 					}
+					NativeIdentity::current( true, $this->token() );
 					return $bridge->perform( $intent['operation'], $intent['arguments'] );
 				}
 			);
@@ -481,10 +509,12 @@ final class StaffController {
 	}
 
 	private function error( \Throwable $error, int $status = 422 ): WP_REST_Response {
+		$status = in_array( $error->getCode(), array( 401, 403 ), true ) ? $error->getCode() : $status;
 		return $this->reply(
 			array(
-				'state'   => 'failed',
-				'message' => $error->getMessage(),
+				'state'     => 401 === $status ? 'login_required' : 'failed',
+				'login_url' => 401 === $status ? NativeIdentity::login_url() : null,
+				'message'   => $error->getMessage(),
 			),
 			$status
 		);

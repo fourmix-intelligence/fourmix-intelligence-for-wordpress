@@ -8,11 +8,12 @@ final class Options {
 		return (array) get_option( 'fourmix_intelligence_settings', array() ); }
 	public static function get( string $key, mixed $fallback = null ): mixed {
 		$constant = array(
-			'url'        => 'FOURMIX_INTELLIGENCE_API_URL',
-			'token'      => 'FOURMIX_INTELLIGENCE_API_TOKEN',
-			'agent'      => 'FOURMIX_INTELLIGENCE_AGENT',
-			'dataset'    => 'FOURMIX_INTELLIGENCE_DATASET',
-			'sync_token' => 'FOURMIX_INTELLIGENCE_SYNC_TOKEN',
+			'platform_url' => 'FOURMIX_INTELLIGENCE_PLATFORM_URL',
+			'url'          => 'FOURMIX_INTELLIGENCE_API_URL',
+			'token'        => 'FOURMIX_INTELLIGENCE_API_TOKEN',
+			'agent'        => 'FOURMIX_INTELLIGENCE_AGENT',
+			'dataset'      => 'FOURMIX_INTELLIGENCE_DATASET',
+			'sync_token'   => 'FOURMIX_INTELLIGENCE_SYNC_TOKEN',
 		)[ $key ] ?? null;
 		if ( $constant && defined( $constant ) && constant( $constant ) ) {
 			return constant( $constant );

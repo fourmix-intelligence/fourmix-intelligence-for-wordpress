@@ -61,6 +61,10 @@ final class SettingsPage {
 			delete_option( 'fourmix_intelligence_bridge_binding' );
 		}
 		return array(
+			'platform_url'      => esc_url_raw( (string) ( $input['platform_url'] ?? $current['platform_url'] ?? 'https://platform.ai.fourmix.co.jp' ) ),
+			'portal_url'        => esc_url_raw( (string) ( $input['portal_url'] ?? $current['portal_url'] ?? 'https://ai.fourmix.co.jp' ) ),
+			'native_tenant'     => sanitize_text_field( (string) ( $input['native_tenant'] ?? $current['native_tenant'] ?? '' ) ),
+			'native_connection' => sanitize_text_field( (string) ( $input['native_connection'] ?? $current['native_connection'] ?? '' ) ),
 			'url'               => esc_url_raw( (string) ( $input['url'] ?? 'https://mcp.ai.fourmix.co.jp' ) ),
 			'token'             => $token,
 			'agent'             => $agent,
@@ -91,6 +95,16 @@ final class SettingsPage {
 		<p><?php esc_html_e( 'サイトの案内、AI接客、コンテンツ同期を一つの設定で管理します。秘密情報はブラウザーへ公開されません。', 'fourmix-intelligence' ); ?></p>
 		<form action="options.php" method="post"><?php settings_fields( 'fourmix_intelligence' ); ?>
 		<table class="form-table" role="presentation">
+		<?php
+		foreach ( array(
+			'platform_url'      => '認証 API の URL',
+			'portal_url'        => 'ログイン画面の URL',
+			'native_tenant'     => 'テナント ID',
+			'native_connection' => '共有の業務接続 ID',
+		) as $key => $label ) :
+			?>
+		<tr><th><label for="fmi-<?php echo esc_attr( $key ); ?>"><?php echo esc_html( $label ); ?></label></th><td><input class="regular-text" id="fmi-<?php echo esc_attr( $key ); ?>" name="fourmix_intelligence_settings[<?php echo esc_attr( $key ); ?>]" value="<?php echo esc_attr( $options[ $key ] ?? '' ); ?>"></td></tr>
+		<?php endforeach; ?>
 		<tr><th><label for="fmi-url"><?php esc_html_e( '接続先', 'fourmix-intelligence' ); ?></label></th><td><input class="regular-text" id="fmi-url" name="fourmix_intelligence_settings[url]" type="url" value="<?php echo esc_attr( $options['url'] ?? 'https://mcp.ai.fourmix.co.jp' ); ?>"></td></tr>
 		<tr><th><label for="fmi-token"><?php esc_html_e( '接続トークン', 'fourmix-intelligence' ); ?></label></th><td><input class="regular-text" id="fmi-token" name="fourmix_intelligence_settings[token]" type="password" autocomplete="new-password" value="" placeholder="<?php echo esc_attr( empty( $options['token'] ) ? __( '接続トークンを入力', 'fourmix-intelligence' ) : __( '設定済み（変更する場合のみ入力）', 'fourmix-intelligence' ) ); ?>"></td></tr>
 		<tr><th><label for="fmi-agent"><?php esc_html_e( 'お客様向けAI', 'fourmix-intelligence' ); ?></label></th><td><select id="fmi-agent" name="fourmix_intelligence_settings[agent]"><option value=""><?php esc_html_e( 'Studioで作成したAIを選択', 'fourmix-intelligence' ); ?></option>

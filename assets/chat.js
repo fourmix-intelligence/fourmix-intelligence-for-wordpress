@@ -23,7 +23,7 @@
   function mount(host, options) {
     let state = {messages: [], pending: null, conversation_id: '', thread_id: options.thread_id || ''};
     const key = 'fourmix_intelligence_chat_v3_' + options.scope;
-    try { const prior = JSON.parse(sessionStorage.getItem(key) || 'null'); if (prior && Date.now() - prior.at < (options.ttl || 900000) && (!options.thread_id || prior.thread_id === options.thread_id)) state = prior; } catch (_) {}
+    try { const prior = JSON.parse(sessionStorage.getItem(key) || 'null'); if (options.preserveDraft && prior && Date.now() - prior.at < 86400000) state.draft = prior.draft || ''; if (prior && Date.now() - prior.at < (options.ttl || 900000) && (!options.thread_id || prior.thread_id === options.thread_id)) state = prior; } catch (_) {}
     const save = () => { try { sessionStorage.setItem(key, JSON.stringify({...state, at: Date.now()})); } catch (_) {} };
     let controller = null, generation = 0, busy = false, disposed = false, attachments = null, renderTimer = null, visibleCount = 40;
     const messageNodes = new Map();
@@ -44,6 +44,10 @@
     const stop = button(__('受信を停止')); stop.hidden = true;
     const send = button(__('送信')); send.type = 'submit'; send.classList.add('fmi-chat__button--primary'); controls.append(hint, stop, send); form.append(label, controls);
     host.append(toolbar, log, status, recover, form);
+    if (options.preserveDraft) {
+      input.value = state.draft || '';
+      input.addEventListener('input', () => { state.draft = input.value; save(); });
+    }
     if (options.attachments) attachments = window.FourmixIntelligenceAttachments?.mount(form, {...options.attachments, scope: options.scope, ttl: options.ttl,
       identity: () => ({...(options.attachments.identity?.() || {}), conversation_id: state.conversation_id, thread_id: state.thread_id}),
       onConversation: (id) => { state.conversation_id = id; save(); }, onChange: () => activity(busy)});
@@ -151,7 +155,7 @@
       const extra = options.context ? options.context() : {};
       const files = attachments?.consume() || [], text = input.value.trim() || __('添付したファイルについて確認してください。');
       state.pending = {...extra, message: text, attachment_ids: files.map((item) => item.id), request_id: Date.now() + ':' + crypto.randomUUID(), thread_id: state.thread_id, conversation_id: state.conversation_id};
-      state.messages.push({role: 'user', content: text, attachments: files, context: options.contextLabel ? options.contextLabel(extra) : ''}); input.value = ''; follow = true; save(); redraw(); transmit();
+      state.messages.push({role: 'user', content: text, attachments: files, context: options.contextLabel ? options.contextLabel(extra) : ''}); input.value = ''; state.draft = ''; follow = true; save(); redraw(); transmit();
     });
     input.addEventListener('keydown', (event) => { if (event.key === 'Enter' && (event.ctrlKey || event.metaKey) && !event.isComposing) { event.preventDefault(); form.requestSubmit(); } });
     stop.addEventListener('click', () => { ++generation; controller?.abort(); controller = null; unknown(); say(__('受信を停止しました。サーバー側の処理は取り消されていません。送信結果を確認してください。')); });
@@ -201,12 +205,12 @@
   }
   async function stream(endpoint, init, signal, onEvent) {
     const reply = await fetch(endpoint, {...init, signal});
-    if (!reply.ok) { const value = await reply.json(); const error = new Error(value.message || __('接続と権限を確認してください。')); error.status = reply.status; error.code = value.code; throw error; }
+    if (!reply.ok) { const value = await reply.json(); const error = new Error(value.message || __('接続と権限を確認してください。')); error.status = reply.status; error.code = value.code; error.loginUrl = value.login_url; throw error; }
     if (!reply.headers.get('Content-Type')?.includes('application/x-ndjson') || !reply.body) throw new Error(__('逐次応答を受信できませんでした。'));
     const reader = reply.body.getReader(), decoder = new TextDecoder(); let buffer = '', completed = null, received = 0;
     function line(value) {
       if (!value.trim()) return; const event = JSON.parse(value); if (!event || typeof event.type !== 'string' || !event.data) throw new Error(__('応答の形式を確認できませんでした。'));
-      if (event.type === 'run.failed') { const error = new Error(event.data.message || __('結果を確認できませんでした。')); error.status = event.data.status_code; throw error; }
+      if (event.type === 'run.failed') { const error = new Error(event.data.message || __('結果を確認できませんでした。')); error.status = event.data.status_code; error.loginUrl = event.data.login_url; throw error; }
       onEvent(event); if (event.type === 'run.completed') completed = event.data.response;
     }
     try { while (true) { const {value, done} = await reader.read(); received += value?.byteLength || 0; if (received > 2 * 1024 * 1024) throw new Error(__('応答が大きすぎます。送信結果を確認してください。')); buffer += decoder.decode(value || new Uint8Array(), {stream: !done}); const lines = buffer.split('\n'); buffer = lines.pop() || ''; lines.forEach(line); if (done) break; } line(buffer); if (!completed) throw new Error(__('応答が途中で切れました。送信結果を確認してください。')); return completed; }

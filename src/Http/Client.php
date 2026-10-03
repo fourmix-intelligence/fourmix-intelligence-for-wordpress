@@ -48,10 +48,10 @@ final class Client {
 			'body'                => $body,
 		);
 		// 統合開発環境の固定設定だけを許可し、設定画面の任意URLには適用しません。
-		$local = defined( 'WP_DEBUG' ) && WP_DEBUG && defined( 'FOURMIX_INTELLIGENCE_API_URL' ) && 'http' === wp_parse_url( $url, PHP_URL_SCHEME ) && in_array( wp_parse_url( $url, PHP_URL_HOST ), array( 'platform', 'localhost', '127.0.0.1' ), true ) && str_starts_with( $url, rtrim( (string) constant( 'FOURMIX_INTELLIGENCE_API_URL' ), '/' ) . '/' );
+		$local = defined( 'WP_DEBUG' ) && WP_DEBUG && defined( 'FOURMIX_INTELLIGENCE_API_URL' ) && 'http' === wp_parse_url( $url, PHP_URL_SCHEME ) && in_array( wp_parse_url( $url, PHP_URL_HOST ), array( 'platform', 'intelligence', 'localhost', '127.0.0.1' ), true ) && str_starts_with( $url, rtrim( (string) constant( 'FOURMIX_INTELLIGENCE_API_URL' ), '/' ) . '/' );
 		$reply = $local ? wp_remote_request( $url, $args ) : wp_safe_remote_request( $url, $args );
 		if ( is_wp_error( $reply ) || wp_remote_retrieve_response_code( $reply ) < 200 || wp_remote_retrieve_response_code( $reply ) >= 300 ) {
-			throw new \RuntimeException( esc_html__( '接続先で処理を確認できません。更新を繰り返さず結果を確認してください。', 'fourmix-intelligence' ) );
+			throw new \RuntimeException( esc_html__( '接続先で処理を確認できません。更新を繰り返さず結果を確認してください。', 'fourmix-intelligence' ), is_wp_error( $reply ) ? 502 : (int) wp_remote_retrieve_response_code( $reply ) );
 		}
 		return $reply;
 	}

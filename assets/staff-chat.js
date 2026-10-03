@@ -29,17 +29,20 @@
     }
     await load('fourmix-intelligence-chat');
   }
-  function unavailable(message) {
+  function unavailable(message, loginUrl = null, denied = false) {
     chat?.dispose(); chat = null; context.hidden = true; host.classList.remove('fmi-chat');
     const prompt = node('div', 'fmi-staff-setup'); prompt.append(node('p', '', message || __('相談を始めるには、本人のAI設定を確認してください。')));
-    const link = node('a', 'button button-primary', __('本人のAI設定を開く')); link.href = config.settingsUrl; prompt.append(link); host.replaceChildren(prompt);
+    const link = node('a', 'button button-primary', __('本人のAI設定を開く')); link.href = loginUrl || config.settingsUrl; if (loginUrl) link.textContent = __('Fourmix Intelligence にログイン'); if (!denied) prompt.append(link); host.replaceChildren(prompt);
   }
   async function request(action, body, signal) {
     const reply = await fetch(config.endpoint + action, {method: 'POST', credentials: 'same-origin', signal, headers: {'Content-Type': 'application/json', 'X-WP-Nonce': config.nonce}, body: JSON.stringify(body || {})});
     const data = await reply.json();
     if (!reply.ok) {
       const error = new Error(data.message || __('本人の接続と権限を確認してください。'));
-      if (['rest_forbidden', 'rest_cookie_invalid_nonce'].includes(data.code) || (reply.status === 403 && ['session', 'run_status', 'new_conversation'].includes(action))) {
+      error.status = reply.status; error.loginUrl = data.login_url;
+      if (reply.status === 401 || reply.status === 403) {
+        ++revision; unavailable(error.message, data.login_url, reply.status === 403);
+      } else if (['rest_forbidden', 'rest_cookie_invalid_nonce'].includes(data.code) || (reply.status === 403 && ['session', 'run_status', 'new_conversation'].includes(action))) {
         ++revision; unavailable(error.message);
       } else if (action === 'chat') {
         // 実行中の結果は保留にし、再送せず結果照会で本人接続を確認します。
@@ -59,22 +62,23 @@
         const catalog = await request('catalog', {post_id: config.context.post_id}); if (version !== revision) return;
         const agent = catalog.agents.find((item) => item.name === catalog.selected_agent);
         if (!agent) { unavailable(); return; }
+        await loadChat(); if (version !== revision) return;
         const session = await request('session', {agent: agent.name}); if (version !== revision) return;
         context.hidden = false;
         if (catalog.context) context.querySelector('.fmi-staff-context-title').textContent = catalog.context.title;
         chat = window.FourmixIntelligenceChat.mount(host, {
-          ...session, label: agent.label, tools: true,
+          ...session, label: agent.label, tools: true, preserveDraft: true,
           attachments: {policy: agent.attachments, endpoint: config.endpoint, nonce: config.nonce, identity: () => ({agent: agent.name})},
           stream: async (body, signal, receive) => {
             try { return await window.FourmixIntelligenceChat.stream(config.endpoint + 'chat_stream', {method: 'POST', credentials: 'same-origin', headers: {'Content-Type': 'application/json', 'X-WP-Nonce': config.nonce}, body: JSON.stringify({agent: agent.name, ...body})}, signal, receive); }
-            catch (error) { if (error.status === 403 || ['rest_forbidden', 'rest_cookie_invalid_nonce'].includes(error.code)) { ++revision; unavailable(error.message); } throw error; }
+            catch (error) { if (error.status === 401 || error.status === 403 || ['rest_forbidden', 'rest_cookie_invalid_nonce'].includes(error.code)) { ++revision; unavailable(error.message, error.loginUrl, error.status === 403); } throw error; }
           },
           request: (action, body, signal) => request(action, {agent: agent.name, ...body}, signal),
           newConversation: () => request('new_conversation', {agent: agent.name}),
           context: () => ({post_id: catalog.context ? config.context.post_id : 0, include_context: include.checked, screen: config.context.screen, screen_title: config.context.title}),
           contextLabel: (body) => body.include_context ? __('現在の画面情報を送信（本文は含みません）') : __('画面情報は送信していません')
         });
-      } catch (error) { if (version === revision) unavailable(error.message); }
+      } catch (error) { if (version === revision) unavailable(error.message, error.loginUrl, error.status === 403); }
     })();
     return initialization;
   }

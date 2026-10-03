@@ -5,11 +5,12 @@
   const byId = (id) => document.getElementById(id);
   const labels = {id: __('対象ID'), post_type: __('投稿の種類'), title: __('タイトル'), content: __('本文'), status: __('状態'), query: __('検索語'), limit: __('件数'), name: __('名称'), description: __('説明'), regular_price: __('通常価格'), stock_quantity: __('在庫数'), note: __('備考'), code: __('コード'), amount: __('金額'), discount_type: __('割引方法')};
   const states = {draft: __('下書き'), publish: __('公開'), pending: __('レビュー待ち')};
-  let operations = [], pending = null;
+  let operations = [], pending = null, agent = '';
+  const bodyIdentity = (body) => ({agent, ...body});
   const postId = Number(new URLSearchParams(location.search).get('post_id') || 0);
   const status = (text) => { byId('fmi-result').textContent = text; };
   async function request(action, body, signal) {
-    const reply = await fetch(config.endpoint + action, {method: 'POST', credentials: 'same-origin', signal, headers: {'Content-Type': 'application/json', 'X-WP-Nonce': config.nonce}, body: JSON.stringify(body || {})});
+    const reply = await fetch(config.endpoint + action, {method: 'POST', credentials: 'same-origin', signal, headers: {'Content-Type': 'application/json', 'X-WP-Nonce': config.nonce}, body: JSON.stringify(bodyIdentity(body || {}))});
     const data = await reply.json();
     if (!reply.ok) throw new Error(data.message || (data.state === 'unknown_effect' ? __('結果が不明です。再実行せず履歴と対象データを確認してください。') : __('処理を確認できませんでした。')));
     return data;
@@ -51,9 +52,9 @@
     status(data.state === 'succeeded' ? __('実行しました。') + '\n' + JSON.stringify(data.data, null, 2) : __('結果が不明です。再実行せず確認してください。'));
   }));
   request('catalog', {post_id: postId}).then(async (data) => {
-    operations = data.operations; byId('fmi-action').replaceChildren(...operations.map((operation) => new Option(operation.description, operation.name)));
+    agent = data.selected_agent || ''; operations = data.operations; byId('fmi-action').replaceChildren(...operations.map((operation) => new Option(operation.description, operation.name)));
     byId('fmi-operation').querySelector('[type="submit"]').disabled = !operations.length;
-    if (!operations.length) { byId('fmi-action').append(new Option(__('許可された操作がありません'), '')); byId('fmi-action').disabled = true; }
+    if (!operations.length) { byId('fmi-action').append(new Option(__('直接利用できる操作はありません。Studio の会話から依頼してください。'), '')); byId('fmi-action').disabled = true; }
     byId('fmi-modules').textContent = (data.woocommerce ? __('WooCommerceを検出しました。') : __('WooCommerceは未導入です。')) + ' ' + (data.appointments === 'detected_not_enabled' ? __('予約プラグインを検出しました。操作の接続は別途設定してください。') : __('予約操作は有効になっていません。')); fields();
   }).catch((error) => status(error.message));
 })();

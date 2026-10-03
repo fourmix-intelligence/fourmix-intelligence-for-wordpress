@@ -60,6 +60,7 @@ final class StreamResponse {
 						'data' => array(
 							'message'     => $data['message'] ?? __( '結果を確認できません。再送せず送信結果を確認してください。', 'fourmix-intelligence' ),
 							'status_code' => $reply->get_status(),
+							'login_url'   => $data['login_url'] ?? null,
 							'state'       => 'unknown_effect',
 						),
 					)

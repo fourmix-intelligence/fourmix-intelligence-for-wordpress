@@ -33,10 +33,15 @@ final class PersonalSettingsPage {
 		?>
 		<div class="wrap fmi-personal-settings">
 			<h1 class="fmi-brand-heading"><img src="<?php echo esc_url( FOURMIX_INTELLIGENCE_URL . 'assets/brand/fourmix-intelligence-icon.png' ); ?>" alt="" width="36" height="36"><?php esc_html_e( 'Fourmix Intelligence 本人のAI設定', 'fourmix-intelligence' ); ?></h1>
-			<p><?php esc_html_e( '本人の接続と、利用する社内向けAIを設定します。この接続は現在のWordPressログインに結び付け、15分で期限が切れます。サイトの公開AI設定とは共用しません。', 'fourmix-intelligence' ); ?></p>
+			<p><?php esc_html_e( '管理者が登録した業務接続を使い、Fourmix Intelligence の現在のログインとワークスペースの権限で社内向け AI を利用します。共有アカウントを使う場合、履歴と監査はそのアカウントに記録されます。', 'fourmix-intelligence' ); ?></p>
+			<?php
+			// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- 通知の表示だけで設定や認可を変更しません。
+			if ( 'cancelled' === sanitize_key( wp_unslash( $_GET['fmi_identity'] ?? '' ) ) ) :
+				?>
+				<p role="status"><?php esc_html_e( 'ログインをキャンセルしました。未完了の操作は実行していません。', 'fourmix-intelligence' ); ?></p><?php endif; ?>
 			<section class="fmi-connection">
 				<h2><?php esc_html_e( '本人の接続', 'fourmix-intelligence' ); ?></h2>
-				<form id="fmi-connect"><label for="fmi-personal-token"><?php esc_html_e( '本人のアクセストークン', 'fourmix-intelligence' ); ?></label><div class="fmi-token-row"><input id="fmi-personal-token" type="password" autocomplete="off" required><button type="submit" class="button"><?php esc_html_e( 'AI一覧を取得', 'fourmix-intelligence' ); ?></button></div></form>
+				<a id="fmi-connect" class="button button-primary" href="<?php echo esc_url( \FourmixIntelligence\WordPress\Support\NativeIdentity::login_url( admin_url( 'admin.php?page=fourmix-intelligence-personal-settings' ) ) ); ?>"><?php esc_html_e( 'Fourmix Intelligence にログイン', 'fourmix-intelligence' ); ?></a>
 				<div class="fmi-agent-row"><label for="fmi-staff-agent"><?php esc_html_e( '社内向けAI', 'fourmix-intelligence' ); ?></label><select id="fmi-staff-agent" disabled></select></div>
 				<p class="description"><?php esc_html_e( 'AI Studioで作成した本人が利用できるAIだけを選択できます。選択は保存し、利用時に権限を再確認します。', 'fourmix-intelligence' ); ?></p>
 				<p id="fmi-personal-status" role="status" aria-live="polite"></p>

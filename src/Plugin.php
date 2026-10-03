@@ -17,6 +17,7 @@ final class Plugin {
 
 	public function boot(): void {
 		\FourmixIntelligence\WordPress\Support\ChatSession::register();
+		\FourmixIntelligence\WordPress\Support\NativeIdentity::register();
 		add_filter( 'cron_schedules', array( $this, 'cron_schedules' ) );
 		$this->ensure_sync_schedule();
 		( new SettingsPage() )->register();

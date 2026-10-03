@@ -164,7 +164,13 @@ final class AttachmentController {
 		} catch ( \InvalidArgumentException $error ) {
 			return $this->reply( array( 'message' => $error->getMessage() ), 422 );
 		} catch ( \Throwable $error ) {
-			return $this->reply( array( 'message' => __( '添付と本人・会話の権限を確認してください。', 'fourmix-intelligence' ) ), 403 );
+			return $this->reply(
+				array(
+					'message'   => __( '添付と本人・会話の権限を確認してください。', 'fourmix-intelligence' ),
+					'login_url' => 401 === $error->getCode() ? \FourmixIntelligence\WordPress\Support\NativeIdentity::login_url() : null,
+				),
+				401 === $error->getCode() ? 401 : 403
+			);
 		}
 	}
 	private function reply( array $data, int $status = 200 ): WP_REST_Response {

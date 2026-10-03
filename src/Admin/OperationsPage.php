@@ -52,6 +52,7 @@ final class OperationsPage {
 		?>
 		<div class="wrap" id="fmi-native-operations">
 			<h1 class="fmi-brand-heading"><img src="<?php echo esc_url( FOURMIX_INTELLIGENCE_URL . 'assets/brand/fourmix-intelligence-icon.png' ); ?>" alt="" width="36" height="36"><?php esc_html_e( 'Fourmix Intelligence WordPressの業務操作', 'fourmix-intelligence' ); ?></h1>
+			<p><a class="button" href="<?php echo esc_url( admin_url( 'admin.php?page=fourmix-intelligence-operations' ) ); ?>"><?php esc_html_e( '選択した Studio AI に相談', 'fourmix-intelligence' ); ?></a></p>
 			<section class="fmi-manual-operations"><p><?php esc_html_e( '本人に許可された操作を直接確認できます。変更する場合はプレビュー後に承認してください。', 'fourmix-intelligence' ); ?></p><p id="fmi-modules"></p>
 				<div id="fmi-result" role="status" aria-live="polite"></div><form id="fmi-operation"><p><label for="fmi-action"><?php esc_html_e( '操作', 'fourmix-intelligence' ); ?></label> <select id="fmi-action"></select></p><div id="fmi-fields"></div><button class="button" type="submit" disabled><?php esc_html_e( '内容をプレビュー', 'fourmix-intelligence' ); ?></button></form>
 				<pre id="fmi-preview"></pre><button class="button button-primary" id="fmi-confirm" type="button" hidden><?php esc_html_e( '内容を確認して実行', 'fourmix-intelligence' ); ?></button>
