@@ -15,6 +15,7 @@ get_user_by( 'id', $fixture )->set_role( 'administrator' );
 wp_set_current_user( $fixture );
 $checks   = 0;
 $reads    = array();
+$receipts = array();
 $status   = 200;
 $identity = array( 'account_id' => 'account-a', 'workspace_id' => 'workspace-one', 'connection_id' => 'ability-connection', 'business_write' => true );
 $agents   = array( array( 'name' => 'team-a', 'audience' => 'internal' ), array( 'name' => 'team-b', 'audience' => 'internal' ) );
@@ -47,6 +48,11 @@ $watch = static function ( $value, $id, $key ) use ( &$reads, $fixture ) {
 	}
 	return $value;
 };
+$record = static function ( $name ) use ( &$receipts ) {
+	if ( str_starts_with( $name, 'fmi_execution_' ) ) {
+		$receipts[] = $name;
+	}
+};
 $select = static function ( $agent ) {
 	$request = new WP_REST_Request( 'POST', '/fourmix-intelligence/v1/staff/select' );
 	$request->set_header( 'X-WP-Nonce', wp_create_nonce( 'wp_rest' ) );
@@ -58,6 +64,7 @@ try {
 	update_user_meta( $fixture, 'fourmix_intelligence_internal_agent', 'team-b' );
 	add_filter( 'pre_http_request', $hook, 10, 3 );
 	add_filter( 'get_user_metadata', $watch, 10, 3 );
+	add_action( 'added_option', $record );
 	$denied( 401 );
 	$check( is_wp_error( ( new AbilityIntegration() )->ask( array( 'message' => '未ログインの合成依頼' ) ) ), 'Ability も未ログインで拒否する。' );
 	NativeIdentity::save( array( 'token' => 'synthetic-ability-token', 'account_id' => 'account-a', 'connection_id' => 'ability-connection', 'provider' => 'wordpress' ) );
@@ -94,6 +101,17 @@ try {
 } finally {
 	remove_filter( 'pre_http_request', $hook, 10 );
 	remove_filter( 'get_user_metadata', $watch, 10 );
+	remove_action( 'added_option', $record );
+	foreach ( $receipts as $name ) {
+		delete_option( $name );
+		wp_clear_scheduled_hook( 'fourmix_intelligence_chat_receipt_expired', array( substr( $name, strlen( 'fmi_execution_' ) ) ) );
+	}
+	foreach ( array( 'account-a', 'account-b' ) as $account ) {
+		$scope_identity = array_replace( $identity, array( 'account_id' => $account ) );
+		foreach ( array( 'team-a', 'team-b' ) as $agent ) {
+			delete_transient( NativeIdentity::scope( $scope_identity ) . '_' . hash( 'sha256', $agent ) );
+		}
+	}
 	delete_transient( NativeIdentity::key() );
 	wp_set_current_user( $actor );
 	update_option( 'fourmix_intelligence_settings', $original );

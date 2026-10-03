@@ -10,7 +10,9 @@
 
 独立した合成 WordPress で `wp eval-file tests/ability-identity-integration.php` を実行します。同じ WordPress ユーザーが複数の Fourmix Intelligence アカウントを使うときの AI 選択、旧共用キーを使わないこと、未ログイン・失効・接続不一致・AI の利用不可を検証します。外部の本人確認と一覧は合成応答とし、モデルは呼び出しません。実画面の案内は `tests/identity-labels-e2e.cjs` で設定ページ・相談ページ・浮窓を確認します。
 
-WordPress Ability の選択元は追補で修正しています。ただし、従来の `ask()` がチャットに必要な会話の識別子を渡さない問題は今回の修正範囲に含めていません。Ability の会話完了を検証したとは扱いません。
+WordPress Ability `fourmix-intelligence/ask-agent` は、現在の本人の選択を検証してから既存の `session()` と `chat()` を利用します。`tests/ability-chat-integration.php` で実登録入口・合成応答・実 WordPress DB の会話と実行記録を検証します。`tests/ability-core-integration.php` は本タスクの固定 Docker 構成に限定し、Fourmix Intelligence のログイン、code 交換、Studio・Python の会話保存と元のログアウトを確認します。モデルだけを固定応答に置き換え、外部モデルを利用しません。CLI には画面を提供するコンテナと同じ `WORDPRESS_DEBUG=1` と `WORDPRESS_CONFIG_EXTRA` の固定 API URL、および検証専用の未使用 recovery code を渡します。
+
+一回の Ability 呼び出しには新しい送信 ID を生成します。結果不明では自動再送せず、`WP_Error` の `request_id` と `thread_id` を既存の状態照会に使います。同じ ID の送信は既存の実行記録で処理しますが、呼び出し元が独立した `execute()` を行うと別の依頼です。独立呼び出し間の自動重複排除や exactly-once は保証しません。上流の不正な回答や結果不明を空の成功へ変換しません。
 
 **AIに相談** は会話専用のページです。`/wp-admin/admin.php?page=fourmix-intelligence-operations`、または編集権限を持つ利用者の管理画面右下の公式アイコンから開けます。ページと浮窓は同じDOM・会話・確認経路を使い、入力や添付を維持します。未設定時は設定への案内だけを表示します。直接操作の従来のカタログは `fourmix-intelligence-native-operations` に移しました。
 
