@@ -163,7 +163,7 @@ final class StaffController {
 		$manifest = ( new Client() )->request( 'GET', '/api/v3/ai/plugins/' . rawurlencode( $agent ) . '/metadata', null, $token );
 		$policy   = \FourmixIntelligence\WordPress\Support\Attachments::policy( (array) ( $manifest['attachments'] ?? array() ) );
 		if ( $create && ! $id && $policy['enabled'] ) {
-			$conversation = ( new Client() )->request( 'POST', '/api/v3/agent-conversations/' . rawurlencode( $agent ) . '/resolve', array(), $token );
+			$conversation = ( new Client() )->request( 'POST', '/api/v3/agent-conversations/' . rawurlencode( $agent ) . '/resolve', array(), $token, platform: true );
 			$id           = (string) ( $conversation['identify'] ?? '' );
 			if ( ! \FourmixIntelligence\WordPress\Support\Attachments::uuid( $id ) ) {
 				throw new \RuntimeException( esc_html__( 'attachment_conversation', 'fourmix-intelligence' ) );
@@ -317,7 +317,7 @@ final class StaffController {
 	public function action( WP_REST_Request $request ): WP_REST_Response {
 		try {
 			list( $token, $scope, $id ) = $this->require_action( $request );
-			$response                   = ( new Client() )->request( 'GET', '/api/v3/connection-actions/' . rawurlencode( $id ), null, $token );
+			$response                   = ( new Client() )->request( 'GET', '/api/v3/connection-actions/' . rawurlencode( $id ), null, $token, platform: true );
 			$response['can_confirm']    = false;
 			if ( 'confirmation_required' === ( $response['status'] ?? '' ) ) {
 				try {
@@ -374,12 +374,12 @@ final class StaffController {
 					)
 				);
 			}
-			$preview = ( new Client() )->request( 'GET', '/api/v3/connection-actions/' . rawurlencode( $id ), null, $token );
+			$preview = ( new Client() )->request( 'GET', '/api/v3/connection-actions/' . rawurlencode( $id ), null, $token, platform: true );
 			if ( 'confirmation_required' !== ( $preview['status'] ?? '' ) ) {
 				return $this->reply( $preview );
 			}
 			$this->validate_native_action( $preview );
-			$result = ( new ExecutionJournal() )->run( $scope, $id, $intent, static fn() => ( new Client() )->request( 'POST', '/api/v3/connection-actions/' . rawurlencode( $id ) . '/confirm', array(), $token ) );
+			$result = ( new ExecutionJournal() )->run( $scope, $id, $intent, static fn() => ( new Client() )->request( 'POST', '/api/v3/connection-actions/' . rawurlencode( $id ) . '/confirm', array(), $token, platform: true ) );
 			return $this->reply(
 				'succeeded' === $result['state'] ? $result['data'] : array(
 					'status' => 'unknown_effect',

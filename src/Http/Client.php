@@ -5,13 +5,14 @@ namespace FourmixIntelligence\WordPress\Http;
 use FourmixIntelligence\WordPress\Support\Options;
 
 final class Client {
-	public function request( string $method, string $path, ?array $body = null, ?string $token = null, ?string $idempotency_key = null ): array {
+	/** 会話の解決と確認操作は platform、それ以外の AI・同期 API は Studio を使います。 */
+	public function request( string $method, string $path, ?array $body = null, ?string $token = null, ?string $idempotency_key = null, bool $platform = false ): array {
 		$token ??= (string) Options::get( 'token', '' );
 		if ( '' === $token ) {
 			throw new \RuntimeException( esc_html__( '接続トークンを確認してください。', 'fourmix-intelligence' ) );
 		}
 		$headers  = $idempotency_key ? array( 'Idempotency-Key' => $idempotency_key ) : array();
-		$response = $this->raw( $method, $path, null === $body ? null : wp_json_encode( $body ), $token, $headers, 2 * MB_IN_BYTES );
+		$response = $this->raw( $method, $path, null === $body ? null : wp_json_encode( $body ), $token, $headers, 2 * MB_IN_BYTES, $platform );
 		$data     = json_decode( wp_remote_retrieve_body( $response ), true );
 		if ( ! is_array( $data ) ) {
 			throw new \RuntimeException( esc_html__( '接続先の応答を確認できませんでした。', 'fourmix-intelligence' ) );
@@ -24,12 +25,12 @@ final class Client {
 		return array_values( array_filter( $items, static fn( $item ) => is_array( $item ) && ( $item['audience'] ?? '' ) === $audience && 'fincube' !== ( $item['name'] ?? '' ) ) );
 	}
 	/** WordPressのURL検証・TLS・HTTP転送を維持したバイナリ/NDJSON用の入口。 */
-	public function raw( string $method, string $path, ?string $body, ?string $token = null, array $headers = array(), int $response_bytes = 20 * MB_IN_BYTES ): array {
+	public function raw( string $method, string $path, ?string $body, ?string $token = null, array $headers = array(), int $response_bytes = 20 * MB_IN_BYTES, bool $platform = false ): array {
 		$token ??= (string) Options::get( 'token', '' );
 		if ( '' === $token ) {
 			throw new \RuntimeException( esc_html__( '本人の接続を確認してください。', 'fourmix-intelligence' ) );
 		}
-		$url  = $this->url( $path );
+		$url  = $this->url( $path, $platform );
 		$args = array(
 			'method'              => $method,
 			'timeout'             => 'POST' === $method ? 180 : 20,
@@ -48,15 +49,16 @@ final class Client {
 			'body'                => $body,
 		);
 		// 統合開発環境の固定設定だけを許可し、設定画面の任意URLには適用しません。
-		$local = Options::local_url( $url, 'url' );
+		$local = Options::local_url( $url, $platform ? 'platform_url' : 'url' );
 		$reply = $local ? wp_remote_request( $url, $args ) : wp_safe_remote_request( $url, $args );
 		if ( is_wp_error( $reply ) || wp_remote_retrieve_response_code( $reply ) < 200 || wp_remote_retrieve_response_code( $reply ) >= 300 ) {
 			throw new \RuntimeException( esc_html__( '接続先で処理を確認できません。更新を繰り返さず結果を確認してください。', 'fourmix-intelligence' ), is_wp_error( $reply ) ? 502 : (int) wp_remote_retrieve_response_code( $reply ) );
 		}
 		return $reply;
 	}
-	private function url( string $path ): string {
-		return rtrim( (string) Options::get( 'url', 'https://mcp.ai.fourmix.co.jp' ), '/' ) . '/' . ltrim( $path, '/' );
+	private function url( string $path, bool $platform = false ): string {
+		$base = $platform ? Options::get( 'platform_url', 'https://platform.ai.fourmix.co.jp' ) : Options::get( 'url', 'https://platform.ai.fourmix.co.jp/intelligence' );
+		return rtrim( (string) $base, '/' ) . '/' . ltrim( $path, '/' );
 	}
 	/** 上流のNDJSON断片だけを即時転送し、完了後の分割再生はしません。 */
 	public function stream( string $path, array $body, ?string $token, callable $emit ): array {
