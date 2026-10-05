@@ -11,6 +11,7 @@ $fixture = wp_create_user( 'identity_' . wp_generate_uuid4(), wp_generate_passwo
 get_user_by( 'id', $fixture )->set_role( 'administrator' );
 wp_set_current_user( $fixture );
 $checks = 0;
+$created_posts = array();
 $check = static function ( $value, $label ) use ( &$checks ) { ++$checks; if ( ! $value ) { throw new RuntimeException( $label ); } };
 $identity = array( 'account_id' => 'synthetic-account-a', 'workspace_id' => 'synthetic-workspace', 'connection_id' => 'synthetic-connection', 'role' => 'member', 'business_write' => true );
 $status = 200;
@@ -24,17 +25,24 @@ $hook = static function ( $pre, $args, $url ) use ( &$identity, &$status, &$call
 		return array( 'headers' => array(), 'response' => array( 'code' => 200 ), 'body' => wp_json_encode( array( array( 'name' => 'synthetic-internal', 'audience' => 'internal' ) ) ) );
 	}
 	if ( str_ends_with( $url, '/synthetic-internal/metadata' ) ) {
-		return array( 'headers' => array(), 'response' => array( 'code' => 200 ), 'body' => wp_json_encode( array( 'tools' => array( array( 'connection_id' => 'synthetic-connection', 'operation_id' => 'content.list' ), array( 'connection_id' => 'synthetic-connection', 'operation_id' => 'content.create' ) ) ) ) );
+		return array( 'headers' => array(), 'response' => array( 'code' => 200 ), 'body' => wp_json_encode( array( 'tools' => array( array( 'connection_id' => 'synthetic-connection', 'operation_id' => 'content.list' ), array( 'connection_id' => 'synthetic-connection', 'operation_id' => 'content.create' ), array( 'connection_id' => 'synthetic-connection', 'operation_id' => 'content.update' ) ) ) ) );
 	}
 	return $pre;
 };
 $request = static function ( $action, $body = array() ) {
+	if ( in_array( $action, array( 'preview', 'confirm' ), true ) ) { $body['agent'] ??= 'synthetic-internal'; }
 	$r = new WP_REST_Request( 'POST', '/fourmix-intelligence/v1/staff/' . $action );
 	$r->set_header( 'X-WP-Nonce', wp_create_nonce( 'wp_rest' ) );
 	$r->set_body_params( $body );
 	return rest_do_request( $r );
 };
 try {
+	$return_url = admin_url( 'admin.php?page=fourmix-intelligence-operations&post_id=123' );
+	$login_url = NativeIdentity::login_url( $return_url );
+	parse_str( wp_parse_url( $login_url, PHP_URL_QUERY ), $login_query );
+	$check( ! str_contains( $login_url, '&amp;' ), 'REST のログインURLにHTMLエンティティを含めない' );
+	$check( $return_url === $login_query['return'], '複数のクエリを含む戻り先を保持する' );
+	$check( false !== wp_verify_nonce( $login_query['_wpnonce'], 'fmi_identity_start' ), 'DOMのhrefへ渡したURLのnonceを検証できる' );
 	update_option( 'fourmix_intelligence_settings', array( 'native_connection' => 'synthetic-connection', 'native_tenant' => 'synthetic-tenant', 'bridge_groups' => array( 'content' ) ) );
 	$check( 401 === $request( 'catalog' )->get_status(), 'WordPress 管理者でも本人未ログインは拒否' );
 	$check( 401 === $request( 'preview', array( 'operation' => 'content.list', 'arguments' => array() ) )->get_status(), '未ログインのローカル情報取得を拒否' );
@@ -53,6 +61,20 @@ try {
 	$check( $a !== $b, '共用 WordPress アカウントでも本人の保存範囲を分離' );
 	$identity['account_id'] = 'synthetic-account-a';
 	$check( $a === NativeIdentity::scope( NativeIdentity::current() ), '同じ Fourmix Intelligence アカウントの帰属を維持' );
+	$preview = $request( 'preview', array( 'operation' => 'content.create', 'arguments' => array( 'post_type' => 'post', 'title' => '本人認証の合成下書き', 'status' => 'draft' ) ) )->get_data();
+	$check( 'confirmation_required' === ( $preview['state'] ?? '' ), '本人認証後も作成はプレビューで止める' );
+	$confirmation_id = $preview['confirmation_id'];
+	$check( 422 === $request( 'confirm', array( 'confirmation_id' => $confirmation_id, 'approved' => false ) )->get_status(), '明示確認なしで作成しない' );
+	$confirmed = $request( 'confirm', array( 'confirmation_id' => $confirmation_id, 'approved' => true ) )->get_data();
+	$check( 'succeeded' === ( $confirmed['state'] ?? '' ), '本人の明示確認後に実WordPressで作成する' );
+	$post_id = $confirmed['data']['id'];
+	$created_posts[] = $post_id;
+	$check( 'draft' === get_post_status( $post_id ), '作成結果を実際の下書きで確認する' );
+	$check( $post_id === $request( 'confirm', array( 'confirmation_id' => $confirmation_id, 'approved' => true ) )->get_data()['data']['id'], '同じ承認を繰り返しても作成は一度だけ' );
+	$stale = $request( 'preview', array( 'operation' => 'content.update', 'arguments' => array( 'id' => $post_id, 'title' => 'プレビューの変更案' ) ) )->get_data();
+	wp_update_post( array( 'ID' => $post_id, 'post_title' => '別の操作で先に変更' ) );
+	$check( 422 === $request( 'confirm', array( 'confirmation_id' => $stale['confirmation_id'], 'approved' => true ) )->get_status(), '古いプレビューは実行せず競合を拒否する' );
+	$check( '別の操作で先に変更' === get_post( $post_id )->post_title, '競合後の本文を上書きしない' );
 	$check( 'synthetic-internal' === $request( 'catalog' )->get_data()['selected_agent'], '本人に戻ると AI 選択を復元' );
 	$identity['role'] = 'viewer'; $identity['business_write'] = false;
 	$check( 200 === $request( 'preview', array( 'agent' => 'synthetic-internal', 'operation' => 'content.list', 'arguments' => array() ) )->get_status(), '読み取り専用メンバーの許可された情報取得を許可' );
@@ -77,5 +99,6 @@ try {
 	wp_set_current_user( $actor );
 	update_option( 'fourmix_intelligence_settings', $original );
 	require_once ABSPATH . 'wp-admin/includes/user.php';
+	foreach ( $created_posts as $post_id ) { wp_delete_post( $post_id, true ); }
 	wp_delete_user( $fixture );
 }

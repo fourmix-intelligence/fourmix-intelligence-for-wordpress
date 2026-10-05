@@ -115,17 +115,17 @@ final class StaffController {
 		);
 		try {
 			$selection = $this->agent_selection( ( new Client() )->catalog( 'internal', $this->token() ) );
+			return $this->reply(
+				$selection + array(
+					'context'      => $this->record_context( absint( $request->get_param( 'post_id' ) ) ),
+					'operations'   => $this->local_operations( $selection['selected_agent'] ),
+					'woocommerce'  => class_exists( 'WooCommerce' ),
+					'appointments' => class_exists( 'WC_Bookings' ) ? 'detected_not_enabled' : 'not_detected',
+				)
+			);
 		} catch ( \Throwable $error ) {
 			return $this->error( $error );
 		}
-		return $this->reply(
-			$selection + array(
-				'context'      => $this->record_context( absint( $request->get_param( 'post_id' ) ) ),
-				'operations'   => $this->local_operations( $selection['selected_agent'] ),
-				'woocommerce'  => class_exists( 'WooCommerce' ),
-				'appointments' => class_exists( 'WC_Bookings' ) ? 'detected_not_enabled' : 'not_detected',
-			)
-		);
 	}
 
 	private function identity( WP_REST_Request $request ): array {

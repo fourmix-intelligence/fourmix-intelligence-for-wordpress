@@ -17,15 +17,14 @@ final class NativeIdentity {
 	public static function login_url( string $return_url = '' ): string {
 		$referer    = wp_get_referer();
 		$return_url = '' !== $return_url ? $return_url : ( $referer ? $referer : admin_url( 'admin.php?page=fourmix-intelligence-personal-settings' ) );
-		return wp_nonce_url(
-			add_query_arg(
-				array(
-					'action' => 'fourmix_intelligence_identity_start',
-					'return' => $return_url,
-				),
-				admin_url( 'admin-post.php' )
+		// REST の値は HTML エスケープせず、HTML 属性へ出力する側で処理します。
+		return add_query_arg(
+			array(
+				'action'   => 'fourmix_intelligence_identity_start',
+				'return'   => rawurlencode( $return_url ),
+				'_wpnonce' => wp_create_nonce( 'fmi_identity_start' ),
 			),
-			'fmi_identity_start'
+			admin_url( 'admin-post.php' )
 		);
 	}
 	public static function start(): void {

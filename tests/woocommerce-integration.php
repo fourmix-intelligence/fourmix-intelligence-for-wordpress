@@ -5,6 +5,7 @@ if ( ! defined( 'WP_CLI' ) || ! WP_CLI || ! str_starts_with( DB_NAME, 'fourmix_w
 	throw new RuntimeException( 'WooCommerce導入済みの合成検証専用です。' );
 }
 require_once ABSPATH . 'wp-admin/includes/user.php';
+use FourmixIntelligence\WordPress\Support\NativeIdentity;
 $original = get_option( 'fourmix_intelligence_settings', array() );
 $prefix = 'fmi_woo_' . wp_generate_uuid4();
 $users = array();
@@ -12,6 +13,7 @@ $products = array();
 $order = null;
 $checks = 0;
 $request = static function ( $action, $params ) {
+	if ( in_array( $action, array( 'preview', 'confirm' ), true ) ) { $params['agent'] ??= 'staff-ai'; }
 	$r = new WP_REST_Request( 'POST', '/fourmix-intelligence/v1/staff/' . $action );
 	$r->set_header( 'content-type', 'application/json' );
 	$r->set_header( 'x-wp-nonce', wp_create_nonce( 'wp_rest' ) );
@@ -23,7 +25,16 @@ $check = static function ( $condition, $label ) use ( &$checks ) {
 	if ( ! $condition ) { throw new RuntimeException( '検証失敗: ' . $label ); }
 };
 $catalog = array( array( 'name' => 'staff-ai', 'audience' => 'internal' ), array( 'name' => 'second-ai', 'audience' => 'internal' ), array( 'name' => 'customer-ai', 'audience' => 'customer' ) );
-$http = static function ( $reply, $args, $url ) use ( &$catalog ) {
+$metadata_failed = false;
+$http = static function ( $reply, $args, $url ) use ( &$catalog, &$metadata_failed ) {
+	if ( str_contains( $url, '/api/v3/native-business/session' ) ) {
+		return array( 'headers' => array(), 'body' => wp_json_encode( array( 'account_id' => 'synthetic-woo-account', 'workspace_id' => 'synthetic-woo-workspace', 'connection_id' => 'synthetic-woo-connection', 'role' => 'member', 'business_write' => true ) ), 'response' => array( 'code' => 200 ) );
+	}
+	if ( str_ends_with( $url, '/staff-ai/metadata' ) || str_ends_with( $url, '/second-ai/metadata' ) ) {
+		if ( $metadata_failed ) { return new WP_Error( 'synthetic_timeout', '合成タイムアウト' ); }
+		$tools = array_map( static fn( $operation ) => array( 'connection_id' => 'synthetic-woo-connection', 'operation_id' => $operation ), array( 'products.get', 'products.list', 'products.save', 'orders.get', 'orders.list', 'orders.update_status', 'customers.get' ) );
+		return array( 'headers' => array(), 'body' => wp_json_encode( array( 'tools' => $tools ) ), 'response' => array( 'code' => 200 ) );
+	}
 	if ( str_ends_with( $url, '/api/v3/ai/plugins/metadata' ) ) {
 		return array( 'headers' => array(), 'body' => wp_json_encode( $catalog ), 'response' => array( 'code' => 200 ) );
 	}
@@ -36,8 +47,9 @@ try {
 		if ( is_wp_error( $id ) ) { throw new RuntimeException( '合成担当者を作成できません。' ); }
 		$users[$role] = $id;
 	}
-	update_option( 'fourmix_intelligence_settings', array( 'bridge_groups' => array( 'products', 'orders', 'customers', 'coupons' ), 'sync_enabled' => false ), false );
+	update_option( 'fourmix_intelligence_settings', array( 'native_connection' => 'synthetic-woo-connection', 'native_tenant' => 'synthetic-woo-tenant', 'bridge_groups' => array( 'products', 'orders', 'customers', 'coupons' ), 'sync_enabled' => false ), false );
 	wp_set_current_user( $users['shop_manager'] );
+	NativeIdentity::save( array( 'token' => 'synthetic-woo-session', 'workspace_id' => 'synthetic-woo-workspace', 'account_id' => 'synthetic-woo-account', 'connection_id' => 'synthetic-woo-connection', 'provider' => 'wordpress' ) );
 	$bridge = new FourmixIntelligence\WordPress\Rest\NativeBridgeController();
 	$names = wp_list_pluck( $bridge->capabilities(), 'name' );
 	$check( ! array_diff( array( 'products.get', 'products.save', 'orders.get', 'orders.update_status', 'customers.get' ), $names ), '導入済みWooCommerceと担当者の権限から能力を検出' );
@@ -73,13 +85,19 @@ try {
 	$request( 'confirm', array( 'confirmation_id' => $preview['confirmation_id'], 'approved' => true ) );
 	$check( $note_count === count( wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) ), '再確認で注文メモを増やさない' );
 	$check( 422 === $request( 'preview', array( 'operation' => 'orders.update_status', 'arguments' => array( 'id' => $order->get_id(), 'status' => 'invented' ) ) )->get_status(), '存在しない状態を拒否' );
-	$check( 200 === $request( 'connect', array( 'token' => 'synthetic-personal-token' ) )->get_status(), 'モデルを呼ばずStudioカタログへ接続' );
+	$check( 401 === $request( 'connect', array( 'token' => 'synthetic-personal-token' ) )->get_status(), '貼り付けトークンで本人認証を迂回しない' );
+	$check( 200 === $request( 'catalog', array() )->get_status(), '本人認証でStudioカタログを取得' );
 	$check( 200 === $request( 'select', array( 'agent' => 'second-ai' ) )->get_status(), '選択時に保存' );
 	$check( 'second-ai' === $request( 'catalog', array() )->get_data()['selected_agent'], '画面再読込でAI選択を復元' );
+	$metadata_failed = true;
+	$check( 422 === $request( 'catalog', array() )->get_status(), 'AIの操作情報取得失敗を致命的エラーにしない' );
+	$metadata_failed = false;
+	$check( 'second-ai' === $request( 'catalog', array() )->get_data()['selected_agent'], '取得失敗後も選択を保持して回復できる' );
 	$check( 422 === $request( 'select', array( 'agent' => 'customer-ai' ) )->get_status(), '公開AIを社内AIとして選べない' );
 	$catalog = array( array( 'name' => 'staff-ai', 'audience' => 'internal' ) );
 	$check( '' === $request( 'catalog', array() )->get_data()['selected_agent'], '権限撤回後のAIは復元しない' );
 	wp_set_current_user( $users['contributor'] );
+	NativeIdentity::save( array( 'token' => 'synthetic-woo-contributor', 'workspace_id' => 'synthetic-woo-workspace', 'account_id' => 'synthetic-woo-account', 'connection_id' => 'synthetic-woo-connection', 'provider' => 'wordpress' ) );
 	$check( ! $bridge->capabilities(), '投稿権限はEC業務の権限を付与しない' );
 	$check( 422 === $request( 'preview', array( 'operation' => 'products.get', 'arguments' => array( 'id' => $product->get_id() ) ) )->get_status(), 'EC権限のない投稿者を拒否' );
 	get_user_by( 'id', $users['contributor'] )->add_cap( 'edit_products' );
@@ -90,6 +108,7 @@ try {
 	WP_CLI::success( 'WooCommerce ' . WC_VERSION . ': ' . $checks . ' 件の合成検証が成功しました。' );
 } finally {
 	remove_filter( 'pre_http_request', $http, 5 );
+	foreach ( $users as $id ) { wp_set_current_user( $id ); delete_transient( NativeIdentity::key() ); }
 	wp_set_current_user( 0 );
 	if ( $order ) { $order->delete( true ); }
 	foreach ( $products as $id ) { $product = wc_get_product( $id ); if ( $product ) { $product->delete( true ); } }
