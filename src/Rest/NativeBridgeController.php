@@ -533,7 +533,7 @@ final class NativeBridgeController {
 				$values['post_content'] = wp_kses_post( $a['content'] );
 			} if ( array_key_exists( 'status', $a ) || 'content.create' === $name ) {
 				$values['post_status'] = sanitize_key( $a['status'] ?? 'draft' );
-			} $id = wp_insert_post( $values, true );
+			} $id = 'content.update' === $name ? wp_update_post( wp_slash( $values ), true ) : wp_insert_post( wp_slash( $values ), true );
 			if ( is_wp_error( $id ) ) {
 				throw new \RuntimeException( $id->get_error_message() );
 			} return array(
