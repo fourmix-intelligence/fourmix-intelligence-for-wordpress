@@ -6,6 +6,7 @@
   const actionIds = (value, depth = 0) => {
     if (!value || typeof value !== 'object' || depth > 12) return [];
     const own = value.status === 'confirmation_required' && /^[a-f0-9-]{36}$/i.test(value.id || '') ? [value.id] : [];
+    if (value.outcome === 'confirmation_required' && /^[a-f0-9-]{36}$/i.test(value.confirmation?.id || '')) own.push(value.confirmation.id);
     return [...new Set(own.concat(...Object.values(value).map((item) => actionIds(item, depth + 1))))];
   };
   function content(target, text) {

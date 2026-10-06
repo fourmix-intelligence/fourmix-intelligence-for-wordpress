@@ -28,6 +28,9 @@ check( 'unknown_effect' === ChatSession::run( 'actor-a', $unknown_key, $intent, 
 check( 'unknown_effect' === ChatSession::run( 'actor-a', $unknown_key, $intent, $unknown )['state'] && 2 === $calls );
 check( 'unknown_effect' === ChatSession::status( 'actor-a', $unknown_key )['state'] );
 $confirmation = array( 'status' => 'confirmation_required', 'id' => $uuid );
+check( array( $uuid ) === ChatSession::actions( array( 'result' => array( 'data' => array( 'effects' => array( array( 'outcome' => 'confirmation_required', 'confirmation' => array( 'id' => $uuid ) ) ) ) ) ) ) );
+check( array() === ChatSession::actions( array( 'outcome' => 'succeeded', 'confirmation' => array( 'id' => $uuid ) ) ) );
+check( array() === ChatSession::actions( array( 'outcome' => 'confirmation_required', 'confirmation' => array( 'id' => 'invalid' ) ) ) );
 check( array( $uuid ) === ChatSession::actions( array( 'tool' => $confirmation, 'nested' => array( $confirmation ) ) ) );
 check( array() === ChatSession::actions( array( 'answer' => json_encode( $confirmation ) ) ) );
 $deep = $confirmation; for ( $i = 0; $i < 14; ++$i ) { $deep = array( 'nested' => $deep ); }

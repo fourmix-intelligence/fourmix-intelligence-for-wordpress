@@ -31,7 +31,8 @@ final class ChatAssets {
 		wp_set_script_translations( 'fourmix-intelligence-answer', 'fourmix-intelligence' );
 		wp_register_script( 'fourmix-intelligence-attachments', FOURMIX_INTELLIGENCE_URL . 'assets/attachments.js', array( 'wp-i18n' ), FOURMIX_INTELLIGENCE_VERSION, true );
 		wp_set_script_translations( 'fourmix-intelligence-attachments', 'fourmix-intelligence' );
-		wp_register_script( 'fourmix-intelligence-chat', FOURMIX_INTELLIGENCE_URL . 'assets/chat.js', array( 'fourmix-intelligence-answer', 'fourmix-intelligence-attachments' ), FOURMIX_INTELLIGENCE_VERSION, true );
+		$chat_version = FOURMIX_INTELLIGENCE_VERSION . '-' . substr( hash_file( 'sha256', FOURMIX_INTELLIGENCE_DIR . 'assets/chat.js' ), 0, 12 );
+		wp_register_script( 'fourmix-intelligence-chat', FOURMIX_INTELLIGENCE_URL . 'assets/chat.js', array( 'fourmix-intelligence-answer', 'fourmix-intelligence-attachments' ), $chat_version, true );
 		wp_set_script_translations( 'fourmix-intelligence-chat', 'fourmix-intelligence' );
 		wp_register_style( 'fourmix-intelligence-chat', FOURMIX_INTELLIGENCE_URL . 'assets/chat.css', array(), FOURMIX_INTELLIGENCE_VERSION );
 		wp_register_style( 'fourmix-intelligence-answer', FOURMIX_INTELLIGENCE_URL . 'assets/answer.css', array( 'fourmix-intelligence-chat' ), FOURMIX_INTELLIGENCE_VERSION );

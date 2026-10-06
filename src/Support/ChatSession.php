@@ -76,6 +76,9 @@ final class ChatSession {
 			return array();
 		}
 		$ids = array();
+		if ( 'confirmation_required' === ( $value['outcome'] ?? '' ) && is_array( $value['confirmation'] ?? null ) && preg_match( '/^[a-f0-9-]{36}$/iD', (string) ( $value['confirmation']['id'] ?? '' ) ) ) {
+			$ids[] = $value['confirmation']['id'];
+		}
 		if ( 'confirmation_required' === ( $value['status'] ?? '' ) && preg_match( '/^[a-f0-9-]{36}$/iD', (string) ( $value['id'] ?? '' ) ) ) {
 			$ids[] = $value['id'];
 		}
