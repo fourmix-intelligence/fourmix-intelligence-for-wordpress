@@ -10,6 +10,8 @@ final class StreamResponse {
 		foreach ( $value as $key => $item ) {
 			if ( in_array( $key, array( 'customer_token', 'conversation_token', 'run_ticket', 'authorization' ), true ) ) {
 				unset( $value[ $key ] );
+			} elseif ( 'artifacts' === $key && is_array( $item ) ) {
+				$value[ $key ] = array_map( static fn( $artifact ) => array_intersect_key( $artifact, array_flip( array( 'id', 'name', 'mime', 'size', 'expires_at', 'kind', 'download_url' ) ) ), array_values( array_filter( $item, 'is_array' ) ) );
 			} elseif ( is_array( $item ) ) {
 				$value[ $key ] = self::clean( $item );
 			}
@@ -43,7 +45,7 @@ final class StreamResponse {
 			};
 			$reply = $run( $emit );
 			$data  = $reply->get_data();
-			if ( $reply->get_status() < 300 && 'unknown_effect' !== ( $data['state'] ?? '' ) ) {
+			if ( $reply->get_status() < 300 && ! in_array( $data['state'] ?? '', array( 'unknown_effect', 'cancelled' ), true ) ) {
 				$emit(
 					array(
 						'type' => 'run.completed',
@@ -61,7 +63,8 @@ final class StreamResponse {
 							'message'     => $data['message'] ?? __( '結果を確認できません。再送せず送信結果を確認してください。', 'fourmix-intelligence' ),
 							'status_code' => $reply->get_status(),
 							'login_url'   => $data['login_url'] ?? null,
-							'state'       => 'unknown_effect',
+							'state'       => 'cancelled' === ( $data['state'] ?? '' ) ? 'cancelled' : 'unknown_effect',
+							'code'        => 'RUN_CANCELLED' === ( $data['code'] ?? '' ) ? 'RUN_CANCELLED' : null,
 						),
 					)
 				);

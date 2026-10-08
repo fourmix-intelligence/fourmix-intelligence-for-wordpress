@@ -40,7 +40,20 @@
       link.href = target.href; link.textContent = item.post_id ? __('内容を確認') : __('商品を確認'); actions.appendChild(link);
       if (item.purchasable && item.product_id && settings.addToCartEndpoint) {
         const add = document.createElement('button'); add.type = 'button'; add.className = 'fmi-button'; add.textContent = 'カートに追加';
-        add.addEventListener('click', async () => { add.disabled = true; try { const response = await fetch(settings.addToCartEndpoint, {method: 'POST', credentials: 'same-origin', headers: {'Content-Type': 'application/x-www-form-urlencoded'}, body: new URLSearchParams({product_id: String(item.product_id), quantity: '1'})}); if (!response.ok) throw new Error(); add.textContent = '追加しました'; document.body.dispatchEvent(new CustomEvent('wc_fragment_refresh')); } catch (_) { window.location.href = item.product_url; } finally { add.disabled = false; } });
+        const error = document.createElement('p'); error.setAttribute('role', 'alert'); error.hidden = true;
+        add.addEventListener('click', async () => {
+          add.disabled = true; error.hidden = true; error.textContent = ''; add.textContent = __('カートに追加');
+          try {
+            const response = await fetch(settings.addToCartEndpoint, {method: 'POST', credentials: 'same-origin', headers: {'Content-Type': 'application/x-www-form-urlencoded'}, body: new URLSearchParams({product_id: String(item.product_id), quantity: '1'})});
+            if (!response.ok) throw new Error();
+            const result = await response.json();
+            if (!result || result.error || !result.fragments || typeof result.fragments !== 'object' || typeof result.cart_hash !== 'string' || !result.cart_hash) throw new Error();
+            add.textContent = __('追加しました'); document.body.dispatchEvent(new CustomEvent('wc_fragment_refresh'));
+          } catch (_) {
+            error.textContent = __('カートへの追加を確認できませんでした。商品ページで価格と在庫を確認してください。'); error.hidden = false;
+          } finally { add.disabled = false; }
+        });
+        card.appendChild(error);
         actions.appendChild(add);
       }
       card.appendChild(actions); grid.appendChild(card);
@@ -55,7 +68,8 @@
       window.FourmixIntelligenceChat.mount(body, {
         scope: data.scope + ':' + kind, label: __('AI案内'), ttl: 86400000,
         attachments: {policy: data.attachments, endpoint: settings.attachmentEndpoint},
-        newConversation: () => request(settings.attachmentEndpoint + 'new_conversation', {}),
+          newConversation: () => request(settings.attachmentEndpoint + 'new_conversation', {}),
+          cancel: (body) => request(settings.attachmentEndpoint + 'cancel_run', body),
         stream: (body, signal, receive) => window.FourmixIntelligenceChat.stream(settings.streamEndpoint, {method: 'POST', credentials: 'same-origin', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)}, signal, receive),
         welcome: __('このサイトの内容についてご相談ください。サイトの管理者が設定した公開AIがご案内します。'),
         request: (action, payload, signal) => request(action === 'chat' ? settings.endpoint : settings.statusEndpoint, payload, signal),
@@ -74,6 +88,6 @@
     const prior = cached(kind); if (prior) { renderResult(body, prior); return; }
     body.innerHTML = '<p class="fmi-loading">おすすめを選んでいます…</p>';
     const prompt = kind === 'related-content' ? 'このページを見ている人に役立つサイト内の情報を案内してください。' : kind === 'cart-assistant' ? '現在のカートを確認し、買い忘れや相性のよい商品を提案してください。' : '現在の商品と一緒に使うと便利な商品を提案してください。';
-    ask(kind, prompt).then((payload) => { cache(kind, payload); renderResult(body, payload); }).catch(() => { body.innerHTML = ''; });
+    ask(kind, prompt).then((payload) => { cache(kind, payload); renderResult(body, payload); }).catch(() => { body.replaceChildren(); const notice = document.createElement('p'); notice.className = 'fmi-answer'; notice.setAttribute('role', 'alert'); notice.textContent = __('おすすめを表示できませんでした。時間をおいてページを再読み込みしてください。'); body.appendChild(notice); });
   });
 })();

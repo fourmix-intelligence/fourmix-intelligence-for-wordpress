@@ -166,7 +166,7 @@ final class AttachmentController {
 		} catch ( \Throwable $error ) {
 			return $this->reply(
 				array(
-					'message'   => __( '添付と本人・会話の権限を確認してください。', 'fourmix-intelligence' ),
+					'message'   => 401 === $error->getCode() ? __( 'Fourmix Intelligence に再度ログインして、添付の取得をお試しください。', 'fourmix-intelligence' ) : __( '添付と本人・会話の権限を確認してください。', 'fourmix-intelligence' ),
 					'login_url' => 401 === $error->getCode() ? \FourmixIntelligence\WordPress\Support\NativeIdentity::login_url() : null,
 				),
 				401 === $error->getCode() ? 401 : 403

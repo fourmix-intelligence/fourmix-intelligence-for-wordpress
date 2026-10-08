@@ -15,6 +15,7 @@ final class PersonalSettingsPage {
 		if ( 'fourmix-intelligence_page_fourmix-intelligence-personal-settings' !== $hook ) {
 			return;
 		}
+		wp_enqueue_style( 'fourmix-intelligence-admin', FOURMIX_INTELLIGENCE_URL . 'assets/admin.css', array(), \FourmixIntelligence\WordPress\Support\ChatAssets::version( 'assets/admin.css' ) );
 		wp_enqueue_script( 'fourmix-intelligence-personal-settings', FOURMIX_INTELLIGENCE_URL . 'assets/personal-settings.js', array( 'wp-i18n' ), FOURMIX_INTELLIGENCE_VERSION, true );
 		wp_set_script_translations( 'fourmix-intelligence-personal-settings', 'fourmix-intelligence' );
 		wp_localize_script(
@@ -23,6 +24,7 @@ final class PersonalSettingsPage {
 			array(
 				'endpoint' => rest_url( 'fourmix-intelligence/v1/staff/' ),
 				'nonce'    => wp_create_nonce( 'wp_rest' ),
+				'loginConfigurationReady' => \FourmixIntelligence\WordPress\Support\NativeIdentity::login_configuration_ready(),
 			)
 		);
 	}
@@ -41,15 +43,28 @@ final class PersonalSettingsPage {
 				<p role="status"><?php esc_html_e( 'ログインをキャンセルしました。未完了の操作は実行していません。', 'fourmix-intelligence' ); ?></p><?php endif; ?>
 			<section class="fmi-connection">
 				<h2><?php esc_html_e( 'Fourmix Intelligence のログイン', 'fourmix-intelligence' ); ?></h2>
+				<?php if ( \FourmixIntelligence\WordPress\Support\NativeIdentity::login_configuration_ready() ) : ?>
 				<a id="fmi-connect" class="button button-primary" href="<?php echo esc_url( \FourmixIntelligence\WordPress\Support\NativeIdentity::login_url( admin_url( 'admin.php?page=fourmix-intelligence-personal-settings' ) ) ); ?>"><?php esc_html_e( 'Fourmix Intelligence にログイン', 'fourmix-intelligence' ); ?></a>
 				<div class="fmi-agent-row"><label for="fmi-staff-agent"><?php esc_html_e( '社内向けAI', 'fourmix-intelligence' ); ?></label><select id="fmi-staff-agent" disabled></select></div>
 				<p class="description"><?php esc_html_e( 'ワークスペースで公開され、この業務接続を利用できる社内向けAIから選択します。選択はログイン中のアカウントごとに保存し、利用時に権限を再確認します。', 'fourmix-intelligence' ); ?></p>
+				<?php else : ?>
+				<div class="fmi-connection-prerequisite">
+				<p class="description" role="status"><?php echo esc_html( \FourmixIntelligence\WordPress\Support\NativeIdentity::setup_message() ); ?></p>
+				<?php if ( current_user_can( 'manage_options' ) ) : ?>
+					<a class="button" href="<?php echo esc_url( \FourmixIntelligence\WordPress\Support\NativeIdentity::setup_settings_url() ); ?>"><?php echo esc_html( \FourmixIntelligence\WordPress\Support\NativeIdentity::setup_settings_label() ); ?></a>
+				<?php else : ?>
+					<p class="description"><?php echo esc_html( \FourmixIntelligence\WordPress\Support\NativeIdentity::setup_admin_message() ); ?></p>
+				<?php endif; ?>
+				</div>
+				<?php endif; ?>
 				<p id="fmi-personal-status" role="status" aria-live="polite"></p>
 			</section>
+			<div class="fmi-settings-actions">
 			<a class="button button-primary" href="<?php echo esc_url( admin_url( 'admin.php?page=fourmix-intelligence-operations' ) ); ?>"><?php esc_html_e( '相談画面を開く', 'fourmix-intelligence' ); ?></a>
-			<?php if ( current_user_can( 'manage_options' ) ) : ?>
+			<?php if ( current_user_can( 'manage_options' ) && \FourmixIntelligence\WordPress\Support\NativeIdentity::login_configuration_ready() ) : ?>
 				<a class="button" href="<?php echo esc_url( admin_url( 'options-general.php?page=fourmix-intelligence' ) ); ?>"><?php esc_html_e( 'サイト全体の連携設定', 'fourmix-intelligence' ); ?></a>
 			<?php endif; ?>
+			</div>
 		</div>
 		<?php
 	}

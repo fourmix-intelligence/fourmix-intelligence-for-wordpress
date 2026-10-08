@@ -13,7 +13,7 @@ final class ConversationController {
 	public function register(): void {
 		add_action( 'rest_api_init', array( $this, 'routes' ) ); }
 	public function routes(): void {
-		foreach ( array( 'session', 'run_status', 'new_conversation' ) as $action ) {
+		foreach ( array( 'session', 'run_status', 'new_conversation', 'cancel_run' ) as $action ) {
 			register_rest_route(
 				'fourmix-intelligence/v1',
 				'/public/' . $action,
@@ -83,6 +83,36 @@ final class ConversationController {
 			$scope = ChatSession::visitor();
 			$key   = ChatSession::key( (string) $request->get_param( 'request_id' ) );
 			$this->continue_conversation( $request, $body, $scope );
+			if ( empty( $body['conversation_id'] ) ) {
+				// 初回から停止できるよう、訪問者に結び付く会話を先に確保します。
+				$prepare_key = 'fmi_customer_initial_' . hash( 'sha256', $scope . ':' . $key );
+				$prepared    = (array) get_transient( $prepare_key );
+				if ( empty( $prepared['conversation_id'] ) ) {
+					$prepared = ( new Client() )->post(
+						'/api/v3/ai/plugins/' . rawurlencode( Options::public_agent() ) . '/customer-conversation',
+						array(
+							'conversation_id' => null,
+							'customer_token'  => null,
+						)
+					);
+				}
+				$id     = (string) ( $prepared['conversation_id'] ?? '' );
+				$secret = (string) ( $prepared['customer_token'] ?? '' );
+				if ( ! \FourmixIntelligence\WordPress\Support\Attachments::uuid( $id ) || ! preg_match( '/^[a-f0-9]{64}$/D', $secret ) ) {
+					throw new \RuntimeException( 'customer_conversation' );
+				}
+				set_transient( 'fmi_customer_' . hash( 'sha256', $scope . ':' . $id ), $secret, DAY_IN_SECONDS );
+				set_transient(
+					$prepare_key,
+					array(
+						'conversation_id' => $id,
+						'customer_token'  => $secret,
+					),
+					DAY_IN_SECONDS
+				);
+				$body['conversation_id'] = $id;
+				$body['customer_token']  = $secret;
+			}
 			$ids = (array) $request->get_param( 'attachment_ids' );
 			if ( $ids ) {
 				$body['messages'][0]['attachment_ids'] = AttachmentController::validate_ids( $ids, $this->attachment_access( $request ) );
@@ -124,6 +154,37 @@ final class ConversationController {
 			return new WP_REST_Response( array( 'message' => 'ただいまご案内を準備できません。時間をおいてお試しください。' ), 502 ); }
 	}
 
+	public function cancel_run( WP_REST_Request $request ): WP_REST_Response {
+		$denied = $this->access_error( $request );
+		if ( $denied ) {
+			return $denied;
+		}
+		try {
+			$this->require_customer_agent();
+			$body = array();
+			$this->continue_conversation( $request, $body, ChatSession::visitor() );
+			$run = (string) $request->get_param( 'run_id' );
+			if ( empty( $body['conversation_id'] ) || ! \FourmixIntelligence\WordPress\Support\Attachments::uuid( $run ) ) {
+				return new WP_REST_Response( array( 'message' => '停止する処理を確認できません。' ), 422 );
+			}
+			$path = '/api/v3/agent-conversations/' . rawurlencode( Options::public_agent() ) . '/' . $body['conversation_id'] . '/runs/' . $run . '/cancel';
+			return $this->reply(
+				( new Client() )->request(
+					'POST',
+					$path,
+					array(
+						'workspace_id'   => null,
+						'customer_token' => $body['customer_token'],
+					),
+					null,
+					null,
+					true
+				)
+			);
+		} catch ( \Throwable $error ) {
+			return new WP_REST_Response( array( 'message' => '停止の結果を確認できません。送信結果を確認してください。' ), 502 );
+		}
+	}
 	public function session( WP_REST_Request $request ): WP_REST_Response {
 		$denied = $this->access_error( $request );
 		if ( $denied ) {
@@ -238,7 +299,13 @@ final class ConversationController {
 				$secret = (string) get_transient( 'fmi_customer_' . hash( 'sha256', $scope . ':' . $id ) );
 			}
 			if ( ! $secret ) {
-				$value  = ( new Client() )->post( '/api/v3/ai/plugins/' . rawurlencode( Options::public_agent() ) . '/customer-conversation', array() );
+				$value  = ( new Client() )->post(
+					'/api/v3/ai/plugins/' . rawurlencode( Options::public_agent() ) . '/customer-conversation',
+					array(
+						'conversation_id' => null,
+						'customer_token'  => null,
+					)
+				);
 				$id     = (string) ( $value['conversation_id'] ?? '' );
 				$secret = (string) ( $value['customer_token'] ?? '' );
 				if ( ! \FourmixIntelligence\WordPress\Support\Attachments::uuid( $id ) || ! preg_match( '/^[a-f0-9]{64}$/D', $secret ) ) {

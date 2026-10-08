@@ -14,6 +14,23 @@ final class NativeIdentity {
 		add_action( 'admin_post_fourmix_intelligence_identity_start', array( self::class, 'start' ) );
 		add_action( 'admin_post_fourmix_intelligence_identity_callback', array( self::class, 'callback' ) );
 	}
+	public static function login_configuration_ready(): bool {
+		return (bool) Options::get( 'native_tenant', '' )
+			&& (bool) Options::get( 'native_connection', '' )
+			&& (bool) Options::get( 'portal_url', '' );
+	}
+	public static function setup_message(): string {
+		return __( 'このサイトはまだ Fourmix Intelligence のワークスペースに接続されていません。管理者がサイト全体の連携設定を済ませたうえで、ワークスペースからこのサイトへの接続を登録してください。接続が完了すると、ここからログインできます。', 'fourmix-intelligence' );
+	}
+	public static function setup_admin_message(): string {
+		return __( 'サイト管理者に Fourmix Intelligence との接続を依頼してください。', 'fourmix-intelligence' );
+	}
+	public static function setup_settings_label(): string {
+		return __( 'サイト全体の連携設定を確認', 'fourmix-intelligence' );
+	}
+	public static function setup_settings_url(): string {
+		return admin_url( 'options-general.php?page=fourmix-intelligence' );
+	}
 	public static function login_url( string $return_url = '' ): string {
 		$referer    = wp_get_referer();
 		$return_url = '' !== $return_url ? $return_url : ( $referer ? $referer : admin_url( 'admin.php?page=fourmix-intelligence-personal-settings' ) );
@@ -32,7 +49,7 @@ final class NativeIdentity {
 		if ( ! current_user_can( 'edit_posts' ) ) {
 			wp_die( esc_html__( 'この画面を利用できません。', 'fourmix-intelligence' ), '', array( 'response' => 403 ) );
 		}
-		if ( ! Options::get( 'native_tenant', '' ) || ! Options::get( 'native_connection', '' ) || ! Options::get( 'portal_url', '' ) ) {
+		if ( ! self::login_configuration_ready() ) {
 			wp_die( esc_html__( '管理者にFourmix Intelligenceのワークスペースからサイトへの接続を依頼してください。', 'fourmix-intelligence' ), '', array( 'response' => 422 ) );
 		}
 		delete_transient( self::key() ); // 別の本人へのログイン開始後に以前の資格を流用しません。

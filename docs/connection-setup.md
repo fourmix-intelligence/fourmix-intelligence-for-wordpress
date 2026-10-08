@@ -11,4 +11,4 @@
 
 プラグインを通常どおり更新すれば追加のDBマイグレーションは不要です。旧ワークスペース・接続の組を保持したまま、同じ接続での次回確認時に自動設定へ移行します。署名済み機能一覧の取得だけでは新しい接続先を固定しません。
 
-独立したローカルDockerで`wp eval-file tests/connection-bootstrap-integration.php`を実行し、署名・URL検証、再利用拒否、初回と再接続、別環境の拒否、旧設定の保持、失敗時の部分設定防止を検証します。実運用の設定やキーは使用しません。
+独立したローカルDockerで`wp eval-file tests/connection-bootstrap-integration.php`を実行し、署名・URL検証、再利用拒否、初回と再接続、別環境の拒否、旧設定の保持、失敗時の部分設定防止を検証します。`wp eval-file tests/personal-settings-prerequisites.php`では、未接続・設定不足時の案内、相談画面の状態、設定済みのログイン導線、設定権限のない担当者向け表示も確認します。実運用の設定やキーは使用しません。

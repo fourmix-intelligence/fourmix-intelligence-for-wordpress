@@ -31,7 +31,7 @@
     host.replaceChildren(); host.classList.add('fmi-chat');
     const toolbar = node('div', 'fmi-chat__toolbar');
     toolbar.append(node('span', 'fmi-chat__label', options.label || __('AIとの相談')));
-    const fresh = button(__('新しい相談')), history = button(__('履歴を読み込む'));
+    const fresh = button(__('新しい相談')), history = button(options.conversations ? __('相談履歴') : __('履歴を読み込む'));
     toolbar.append(fresh); if (options.history) toolbar.append(history);
     const log = node('div', 'fmi-chat__messages'); log.setAttribute('role', 'log'); log.setAttribute('aria-label', __('相談のメッセージ')); log.setAttribute('aria-live', 'polite'); log.tabIndex = 0;
     const status = node('div', 'fmi-chat__status'); status.setAttribute('role', 'status'); status.setAttribute('aria-live', 'polite');
@@ -42,19 +42,21 @@
     const input = node('textarea', 'fmi-chat__input'); input.rows = 3; input.maxLength = 5000; input.required = true; input.placeholder = options.placeholder || __('相談したいことを入力してください'); label.append(input);
     const controls = node('div', 'fmi-chat__controls');
     const hint = node('span', 'fmi-chat__hint', __('Enterで改行・Ctrl/⌘ + Enterで送信'));
-    const stop = button(__('受信を停止')); stop.hidden = true;
+    input.title = hint.textContent;
+    const stop = button(options.cancel ? __('停止') : __('受信を停止')); stop.hidden = true;
     const send = button(__('送信')); send.type = 'submit'; send.classList.add('fmi-chat__button--primary'); controls.append(hint, stop, send); form.append(label, controls);
     host.append(toolbar, log, status, recover, form);
     if (options.preserveDraft) {
       input.value = state.draft || '';
       input.addEventListener('input', () => { state.draft = input.value; save(); });
     }
+    const artifacts = window.FourmixIntelligenceArtifacts?.mount(options.artifacts, () => ({conversation_id: state.conversation_id, thread_id: state.thread_id}));
     if (options.attachments) attachments = window.FourmixIntelligenceAttachments?.mount(form, {...options.attachments, scope: options.scope, ttl: options.ttl,
       identity: () => ({...(options.attachments.identity?.() || {}), conversation_id: state.conversation_id, thread_id: state.thread_id}),
       onConversation: (id) => { state.conversation_id = id; save(); }, onChange: () => activity(busy)});
     if (attachments) input.required = false;
     function say(text) { status.textContent = text; }
-    function activity(value) { busy = value; send.disabled = value || !!state.pending || !!attachments?.hasBlocking(); input.disabled = value; fresh.disabled = value; history.disabled = value; stop.hidden = !value; attachments?.setBusy(value); host.setAttribute('aria-busy', String(value)); }
+    function activity(value) { busy = value; send.disabled = value || !!state.pending || !!state.active_run || !!attachments?.hasBlocking(); input.disabled = value; fresh.disabled = value; history.disabled = value; stop.hidden = !value; attachments?.setBusy(value); host.setAttribute('aria-busy', String(value)); }
     function scroll() { log.scrollTop = log.scrollHeight; }
     function tool(target, id) {
       const card = node('section', 'fmi-chat__tool'); card.dataset.actionId = id;
@@ -64,13 +66,31 @@
       const actions = node('div', 'fmi-chat__tool-actions');
       const approve = button(__('内容を確認して実行')), reject = button(__('今回は実行しない')), refresh = button(__('実行結果を確認'));
       approve.classList.add('fmi-chat__button--primary'); approve.disabled = true; refresh.hidden = true; actions.append(approve, reject, refresh); card.append(info, result, actions); target.append(card);
-      let processing = false, declined = (state.dismissed || []).includes(id), uncertain = false, lastStatus = '', permitted = false, formal = {};
+      let processing = false, declined = (state.dismissed || []).includes(id), uncertain = (state.actionUnknown || []).includes(id), lastStatus = '', permitted = false, formal = {};
       approve.hidden = declined; reject.hidden = declined;
-      const labels = {confirmation_required: __('確認待ち'), completed: __('実行済み'), failed: __('実行に失敗しました'), unknown_effect: __('結果不明。再実行せず対象データと監査履歴を確認してください。'), running: __('実行中。再実行せず結果を確認してください。'), expired: __('確認期限が切れています')};
+      const labels = {confirmation_required: __('確認待ち'), rejected: __('この操作は実行しません。'), completed: __('実行済み'), failed: __('実行に失敗しました'), unknown_effect: __('結果不明。再実行せず対象データと監査履歴を確認してください。'), running: __('実行中。再実行せず結果を確認してください。'), expired: __('確認期限が切れています')};
+      function completedSummary(value) {
+        if (value?.state === 'unknown_effect' || value?.status === 'unknown_effect') return labels.unknown_effect;
+        if (value?.state === 'failed' || value?.status === 'failed') return labels.failed;
+        if (value?.state !== 'succeeded' && value?.status !== 'succeeded') return __('操作は終了しました。詳細で結果を確認してください。');
+        const operation = value.operation || '';
+        const output = value.data || {};
+        const idText = output.id ? __('（投稿ID: ') + output.id + '）' : '';
+        const status = {draft: __('下書き'), publish: __('公開'), pending: __('レビュー待ち'), private: __('非公開'), future: __('予約'), trash: __('ゴミ箱')}[output.status] || '';
+        if (operation === 'content.create') return output.status === 'draft' ? __('投稿を下書きとして保存しました') + idText + '。' : __('投稿を作成しました') + (status ? __('（状態: ') + status + '）' : '') + idText + '。';
+        if (operation === 'content.update') return __('投稿を更新しました') + (status ? __('（状態: ') + status + '）' : '') + idText + '。';
+        if (operation === 'content.delete' && output.trashed === true) return __('投稿をごみ箱へ移動しました。');
+        return __('操作が完了しました。詳細で結果を確認してください。');
+      }
+      const markUnknown = () => { uncertain = true; state.actionUnknown = [...new Set([...(state.actionUnknown || []), id])]; save(); };
       function render(data) {
         const atEnd = log.scrollHeight - log.scrollTop - log.clientHeight < 80;
         formal = {...formal, ...data};
         lastStatus = data.status;
+        // 正本が未実行の確認待ちを返した場合は、失われた認証応答によるローカル保留を解除できる。
+        // 実行中・結果不明・権限なしは解除せず、実行時の原子的な受付は引き続きサーバーが判断する。
+        if (['rejected', 'completed', 'failed', 'expired'].includes(data.status)
+          || (data.status === 'confirmation_required' && data.can_confirm === true)) { uncertain = false; state.actionUnknown = (state.actionUnknown || []).filter(value => value !== id); save(); }
         permitted = data.can_confirm !== false;
         info.replaceChildren(node('strong', '', formal.operation_name || __('業務操作')));
         const details = node('dl', 'fmi-chat__arguments');
@@ -79,43 +99,111 @@
         info.append(node('small', 'fmi-chat__hint', __('監査ID: ') + id));
         result.textContent = declined && data.status === 'confirmation_required' ? __('この画面からは実行しません。確認要求は期限切れまで保留されます。') : (!permitted && data.message ? data.message : labels[data.status] || __('実行状態を確認できません。'));
         approve.hidden = declined || data.status !== 'confirmation_required'; approve.disabled = processing || uncertain || data.status !== 'confirmation_required';
-        reject.hidden = declined || data.status !== 'confirmation_required'; refresh.hidden = !['unknown_effect', 'running'].includes(data.status) && !uncertain;
-        if (data.status === 'completed' && data.result) { const detail = node('pre', 'fmi-chat__arguments'); detail.textContent = JSON.stringify(data.result, null, 2); info.append(detail); }
+        reject.hidden = declined || data.status !== 'confirmation_required'; reject.disabled = processing || uncertain || !permitted || data.status !== 'confirmation_required'; refresh.hidden = !['unknown_effect', 'running'].includes(data.status) && !uncertain;
+        if (data.status === 'completed' && data.result) {
+          result.textContent = completedSummary(data.result);
+          const detail = node('details', 'fmi-chat__result-details');
+          detail.append(node('summary', '', __('操作結果の詳細')));
+          const raw = node('pre', 'fmi-chat__arguments'); raw.tabIndex = 0; raw.setAttribute('aria-label', __('操作結果の詳細')); raw.textContent = JSON.stringify(data.result, null, 2); detail.append(raw); info.append(detail);
+        }
         if (atEnd) scroll();
       }
-      const load = async () => { if (processing || disposed) return; processing = true; refresh.disabled = true; approve.disabled = true; try { render(await options.request('action', {id, thread_id: state.thread_id})); } catch (error) { lastStatus = ''; result.textContent = error.message; refresh.hidden = false; } finally { processing = false; refresh.disabled = false; approve.disabled = uncertain || !permitted || lastStatus !== 'confirmation_required'; } };
-      reject.addEventListener('click', () => { declined = true; state.dismissed = [...new Set([...(state.dismissed || []), id])]; save(); approve.hidden = true; reject.hidden = true; result.textContent = __('この画面からは実行しません。確認要求は期限切れまで保留されます。'); });
+      const load = async () => { if (processing || disposed) return; processing = true; refresh.disabled = true; approve.disabled = true; try { render(await options.request('action', {id, thread_id: state.thread_id})); } catch (error) { lastStatus = ''; result.textContent = error.message; refresh.hidden = false; } finally { processing = false; refresh.disabled = false; approve.disabled = uncertain || !permitted || lastStatus !== 'confirmation_required'; reject.disabled = uncertain || !permitted || lastStatus !== 'confirmation_required'; } };
+      reject.addEventListener('click', async () => {
+        if (processing || declined || uncertain || !permitted || lastStatus !== 'confirmation_required') return;
+        processing = true; markUnknown(); approve.disabled = true; reject.disabled = true; result.textContent = __('実行しないことを記録しています…');
+        try { render(await options.request('reject_action', {id, thread_id: state.thread_id})); }
+        catch (error) { approve.hidden = true; reject.hidden = true; refresh.hidden = false; result.textContent = error.message + ' ' + labels.unknown_effect; }
+        finally { processing = false; }
+      });
       refresh.addEventListener('click', load);
       approve.addEventListener('click', async () => {
-        if (processing || declined || uncertain || !permitted) return;
+        if (processing || declined || uncertain || !permitted || lastStatus !== 'confirmation_required') return;
         processing = true; approve.disabled = true; reject.disabled = true; result.textContent = __('実行結果を確認しています…');
-        try { const data = await options.request('confirm_action', {id, thread_id: state.thread_id, approved: true}); uncertain = ['unknown_effect', 'running'].includes(data.status); render(data); }
+        markUnknown();
+        try { const data = await options.request('confirm_action', {id, thread_id: state.thread_id, approved: true}); render(data); }
         catch (error) { uncertain = true; approve.hidden = true; reject.hidden = true; refresh.hidden = false; result.textContent = error.message + ' ' + labels.unknown_effect; }
         finally { processing = false; reject.disabled = false; }
       });
       load();
+      return card;
     }
     function message(item) {
       if (messageNodes.has(item)) { log.append(messageNodes.get(item)); return; }
       const article = node('article', 'fmi-chat__message fmi-chat__message--' + (item.role === 'user' ? 'user' : 'assistant'));
       article.append(node('span', 'fmi-chat__speaker', item.role === 'user' ? __('あなた') : options.label || __('AI')));
-      const body = node('div', 'fmi-chat__content'); if (window.FourmixIntelligenceAnswer?.render) window.FourmixIntelligenceAnswer.render(body, item.content, !!item.streaming); else content(body, item.content); article.append(body);
+      const body = node('div', 'fmi-chat__content');
+      let displayed = item.content, legacy = '';
+      // 旧版が付けた参考情報は原文を残して折り畳みます。利用者の JSON や本文を削除しません。
+      if (item.role === 'user' && options.conversations) {
+        const marker = '\n現在の業務画面（参考情報）:\n', position = String(item.content).lastIndexOf(marker);
+        if (position >= 0) {
+          try {
+            const raw = JSON.parse(item.content.slice(position + marker.length));
+            const allowed = ['site', 'channel', 'local_actor', 'account_id', 'screen', 'record'];
+            if (raw && raw.channel === 'wordpress-admin' && /^https?:\/\//.test(raw.site || '') && Number.isInteger(raw.local_actor) && raw.local_actor > 0 && /^[a-f0-9-]{36}$/i.test(raw.account_id || '') && Object.keys(raw).every((key) => allowed.includes(key))) {
+              displayed = item.content.slice(0, position); legacy = item.content.slice(position);
+            }
+          } catch (_) {}
+        }
+      }
+      if (window.FourmixIntelligenceAnswer?.render) window.FourmixIntelligenceAnswer.render(body, displayed, !!item.streaming, item.role === 'assistant' && !item.streaming ? item.artifacts || item.data?.artifacts || [] : []); else content(body, displayed);
+      if (legacy) {
+        const details = node('details', 'fmi-chat__legacy-context'); details.append(node('summary', '', __('画面の参考情報（以前の会話）')), node('pre', 'fmi-chat__code', legacy)); body.append(details);
+      }
+      article.append(body);
+      const terminalNotice = historyRunNotice(item.run_state);
+      if (item.role === 'user' && terminalNotice) article.append(node('p', 'fmi-chat__terminal-status', terminalNotice));
       if (item.context) article.append(node('small', 'fmi-chat__hint', item.context));
       attachments?.drawMessage(body, item.attachments);
+      if (item.role === 'assistant') artifacts?.drawMessage(body, item.artifacts || item.data?.artifacts);
       if (!item.streaming && item.role === 'assistant' && item.follow_up_questions) {
         const questions = node('div', 'fmi-chat__follow-ups');
         item.follow_up_questions.slice(0, 5).forEach((item) => { const prompt = typeof item === 'string' ? item : item.prompt; if (!prompt) return; const choice = button(prompt); choice.addEventListener('click', () => { if (!busy && !state.pending) { input.value = prompt; input.focus(); } }); questions.append(choice); }); article.append(questions);
       }
       if (options.decorate && item.data) options.decorate(body, item.data);
-      if (options.tools) (item.actions || []).forEach((id) => tool(body, id));
+      if (options.tools) {
+        const cards = new Map();
+        (item.actions || []).forEach((id) => { const card = tool(body, id); cards.set(id, () => { card.scrollIntoView({block: 'nearest'}); card.tabIndex = -1; card.focus(); }); });
+        if (item.role === 'assistant' && !item.streaming) window.FourmixIntelligenceAnswer?.bindActionLinks?.(body, cards);
+      }
       messageNodes.set(item, article); log.append(article);
+    }
+    function historyRunNotice(run) {
+      if (run?.status !== 'failed' || run.finalized === false) return '';
+      return run.cancelled === true || run.error?.code === 'RUN_CANCELLED'
+        ? __('この依頼は停止しました。実行済みの操作は元に戻りません。')
+        : __('この依頼の応答を完了できませんでした。再送する前に、会話履歴と操作結果を確認してください。');
+    }
+    function rememberTerminalRun(run) {
+      if (!run?.run_id || run.status !== 'failed') return;
+      const item = [...state.messages].reverse().find((row) => row.role === 'user' && row.run_id === run.run_id);
+      if (!item || item.run_state?.finalized === false) return;
+      item.run_state = {status: 'failed', finalized: true, cancelled: run.cancelled === true};
+      messageNodes.delete(item);
     }
     function redraw() {
       const position = log.scrollTop, visible = state.messages.slice(-visibleCount), retained = new Set(visible);
       messageNodes.forEach((value, item) => { if (!retained.has(item)) messageNodes.delete(item); }); log.replaceChildren();
       if (!state.messages.length) log.append(node('p', 'fmi-chat__empty', options.welcome || __('ここからAIに相談できます。操作が必要な場合は、内容を確認してから実行します。')));
+      if (state.has_more && options.conversations) {
+        const previous = button(__('以前の履歴を読み込む'));
+        previous.addEventListener('click', async () => {
+          if (previous.disabled || disposed) return;
+          const conversation = state.conversation_id, thread = state.thread_id, before = state.before_id, turn = generation;
+          const current = () => !disposed && turn === generation && state.conversation_id === conversation && state.thread_id === thread && state.before_id === before;
+          previous.disabled = true;
+          try {
+            const data = await options.history(conversation, before);
+            if (!current()) return;
+            state.messages = (data.messages || []).filter((item) => ['user', 'assistant'].includes(item.role)).map((item) => ({...item, actions: actionIds(item.data)})).concat(state.messages);
+            state.before_id = data.before_id; state.has_more = data.has_more; visibleCount += 50; save(); follow = false; redraw();
+          } catch (error) { if (current()) { say(error.message); previous.disabled = false; } }
+        }); log.append(previous);
+      }
       if (state.messages.length > visibleCount) { const older = button(__('以前のメッセージを表示')); older.addEventListener('click', () => { const height = log.scrollHeight; follow = false; visibleCount += 40; redraw(); log.scrollTop += log.scrollHeight - height; }); log.append(older); }
-      visible.forEach(message); if (follow) scroll(); else log.scrollTop = position;
+      rememberTerminalRun(state.latest_run);
+      visible.forEach(message); const notice = historyRunNotice(state.latest_run); if (notice && !state.messages.some((item) => item.run_id === state.latest_run?.run_id && item.run_state?.status === 'failed')) log.append(node('p', 'fmi-chat__terminal-status', notice)); if (follow) scroll(); else log.scrollTop = position;
     }
     function renderPartial() {
       const item = state.messages.at(-1); if (!item?.streaming) return;
@@ -127,9 +215,9 @@
       if (payload.state === 'unknown_effect') { unknown(); return; }
       state.conversation_id = payload.conversation_id || state.conversation_id;
       const answer = payload.result?.answer || payload.answer || __('応答を受け取りました。内容をご確認ください。');
-      const partial = state.messages.at(-1); const message = {role: 'assistant', content: answer, data: payload.result?.data, follow_up_questions: payload.result?.follow_up_questions, actions: options.tools ? actionIds(payload) : []};
+      const partial = state.messages.at(-1); const message = {role: 'assistant', content: answer, data: payload.result?.data, artifacts: payload.result?.data?.artifacts || payload.data?.artifacts, follow_up_questions: payload.result?.follow_up_questions, actions: options.tools ? actionIds(payload) : []};
       if (partial?.role === 'assistant' && partial.streaming) state.messages[state.messages.length - 1] = message; else state.messages.push(message);
-      state.pending = null; save(); recover.hidden = true; retry.hidden = true; redraw(); say(__('応答を受け取りました。')); activity(false); if (input.getClientRects().length) input.focus();
+      state.latest_run = null; state.pending = null; state.cancel_requested = false; save(); recover.hidden = true; retry.hidden = true; redraw(); say(__('応答を受け取りました。')); activity(false); if (input.getClientRects().length) input.focus();
     }
     function unknown() { clearTimeout(renderTimer); renderTimer = null; renderPartial(); save(); recover.hidden = false; retry.hidden = true; say(__('受信を完了できませんでした。処理が続いている可能性があります。再送せず、送信結果を確認してください。')); activity(false); }
     async function transmit() {
@@ -138,8 +226,9 @@
       const timeout = setTimeout(() => controller?.abort(), 185000);
       const receive = (event) => {
         if (turn !== generation || disposed) return;
-        if (event.type === 'run.created' && event.data.conversation_id) { state.conversation_id = event.data.conversation_id; save(); }
+        if (event.type === 'run.created' && event.data.conversation_id) { state.conversation_id = event.data.conversation_id; state.run_id = event.run_id; const userTurn = [...state.messages].reverse().find((item) => item.role === 'user'); if (userTurn) userTurn.run_id = event.run_id; save(); if (state.cancel_requested && options.cancel) requestCancellation(); }
         if (['assistant.delta', 'assistant.message'].includes(event.type)) {
+          if (!state.cancel_requested && typeof event.data.text === 'string' && event.data.text.length) say(__('回答を作成しています…'));
           let item = state.messages.at(-1);
           if (item?.role !== 'assistant' || !item.streaming) { item = {role: 'assistant', content: '', streaming: true}; state.messages.push(item); }
           item.content = event.type === 'assistant.message' ? event.data.text || '' : item.content + (event.data.text || ''); if (!renderTimer) renderTimer = setTimeout(() => { renderTimer = null; if (!disposed) { renderPartial(); save(); } }, 120);
@@ -148,31 +237,96 @@
         }
       };
       try { const data = await (options.stream ? options.stream(state.pending, controller.signal, receive) : options.request('chat', state.pending, controller.signal)); if (turn === generation && !disposed) finish(data); }
-      catch (error) { if (turn === generation && !disposed) { unknown(); if (error.name !== 'AbortError') say(error.message + ' ' + __('送信結果を確認してから再開してください。')); } }
+      catch (error) { if (turn === generation && !disposed) { if (error.code === 'RUN_CANCELLED') cancelled(error.message); else { unknown(); if (error.name !== 'AbortError') say(error.message + ' ' + __('送信結果を確認してから再開してください。')); } } }
       finally { clearTimeout(timeout); if (turn === generation && !disposed) { controller = null; activity(false); } }
     }
     form.addEventListener('submit', (event) => {
-      event.preventDefault(); if (busy || state.pending || attachments?.hasBlocking() || (!input.value.trim() && !attachments?.readyCount())) return;
+      event.preventDefault(); if (busy || state.pending || state.active_run || attachments?.hasBlocking() || (!input.value.trim() && !attachments?.readyCount())) return;
       const extra = options.context ? options.context() : {};
       const files = attachments?.consume() || [], text = input.value.trim() || __('添付したファイルについて確認してください。');
       state.pending = {...extra, message: text, attachment_ids: files.map((item) => item.id), request_id: Date.now() + ':' + crypto.randomUUID(), thread_id: state.thread_id, conversation_id: state.conversation_id};
-      state.messages.push({role: 'user', content: text, attachments: files, context: options.contextLabel ? options.contextLabel(extra) : ''}); input.value = ''; state.draft = ''; follow = true; save(); redraw(); transmit();
+      state.run_id = ''; state.cancel_requested = false;
+      rememberTerminalRun(state.latest_run); state.latest_run = null; state.messages.push({role: 'user', content: text, attachments: files, context: options.contextLabel ? options.contextLabel(extra) : ''}); input.value = ''; state.draft = ''; follow = true; save(); redraw(); transmit();
     });
     input.addEventListener('keydown', (event) => { if (event.key === 'Enter' && (event.ctrlKey || event.metaKey) && !event.isComposing) { event.preventDefault(); form.requestSubmit(); } });
-    stop.addEventListener('click', () => { ++generation; controller?.abort(); controller = null; unknown(); say(__('受信を停止しました。サーバー側の処理は取り消されていません。送信結果を確認してください。')); });
+    function cancelled(message, wasCancelled = true) {
+      clearTimeout(renderTimer); renderTimer = null; const partial = state.messages.at(-1); if (partial?.streaming) partial.streaming = false;
+      state.latest_run = {run_id: state.run_id, status: 'failed', cancelled: wasCancelled}; rememberTerminalRun(state.latest_run); state.pending = null; state.cancel_requested = false; recover.hidden = true; save(); redraw(); activity(false); say(message || __('処理を停止しました。実行済みの操作は取り消されません。'));
+    }
+    async function requestCancellation() {
+      if (!state.pending || disposed) return;
+      if (!state.run_id || !state.conversation_id || !options.cancel) { say(__('開始した処理を確認してから停止を依頼します…')); return; }
+      const turn = generation, pending = state.pending, run = state.run_id, conversation = state.conversation_id, thread = state.thread_id;
+      const current = () => !disposed && generation === turn && state.pending === pending && state.run_id === run && state.conversation_id === conversation && state.thread_id === thread;
+      stop.disabled = true;
+      try {
+        const result = await options.cancel({run_id: run, conversation_id: conversation, thread_id: thread});
+        if (!current()) return;
+        if (result.status === 'completed') say(__('処理はすでに完了しています。保存された回答を確認しています…'));
+        else if (result.status === 'failed' && result.cancelled === true) say(__('停止の完了を確認しました。受信結果を整理しています…'));
+        else if (result.status === 'running' && result.cancel_requested === true) say(__('停止を依頼しました。処理の終了を確認しています…'));
+        else say(__('処理の状態を確認しています。再送せず、送信結果を確認してください。'));
+      }
+      catch (error) { if (current()) say(error.message + ' ' + __('停止を確認できませんでした。再送せず、現在の結果を確認してください。')); }
+      finally { if (current() || (!disposed && generation === turn && !state.pending && state.run_id === run && state.conversation_id === conversation && state.thread_id === thread)) stop.disabled = false; }
+    }
+    stop.addEventListener('click', () => {
+      if (options.cancel) { state.cancel_requested = true; save(); requestCancellation(); return; }
+      ++generation; controller?.abort(); controller = null; unknown(); say(__('受信を停止しました。サーバー側の処理は取り消されていません。送信結果を確認してください。'));
+    });
     check.addEventListener('click', async () => {
-      if (!state.pending || busy) return; check.disabled = true;
-      try { const data = await options.request('run_status', {request_id: state.pending.request_id}); if (data.state === 'succeeded') finish(data.response); else if (data.state === 'not_started') { retry.hidden = false; say(__('この送信の実行記録はまだありません。同じ確認情報で送信を再開できます。')); } else say(__('結果がまだ確定していません。再実行せず、時間をおいて結果を確認してください。')); }
-      catch (error) { say(error.message); } finally { check.disabled = false; }
+      if (!state.pending || busy || disposed) return; check.disabled = true;
+      const turn = generation, pending = state.pending, run = state.run_id, conversation = state.conversation_id, thread = state.thread_id;
+      const current = () => !disposed && generation === turn && state.pending === pending && state.run_id === run && state.conversation_id === conversation && state.thread_id === thread;
+      try {
+        if (state.cancel_requested && options.cancel && state.run_id) { const result = await options.cancel({run_id: state.run_id, conversation_id: state.conversation_id, thread_id: state.thread_id}); if (!current()) return; if (result.cancelled && result.status === 'failed') { cancelled(); return; } }
+        const data = await options.request('run_status', {request_id: state.pending.request_id, run_id: state.run_id, conversation_id: state.conversation_id, thread_id: state.thread_id}); if (!current()) return; if (data.state === 'canonical' && data.response?.finalized === true && data.response.run_id === state.run_id) { if (data.response.status === 'completed' && typeof data.response.result?.answer === 'string') { finish({result: data.response.result}); return; } if (data.response.status === 'failed') { cancelled(data.response.error?.message || __('処理を完了できませんでした。実行済みの操作は取り消されません。'), data.response.cancelled === true); return; } } if (data.state === 'succeeded') { if (data.response?.state === 'cancelled') cancelled(data.response.message); else finish(data.response); } else if (data.state === 'not_started') { retry.hidden = false; say(__('この送信の実行記録はまだありません。同じ確認情報で送信を再開できます。')); } else say(__('結果がまだ確定していません。再実行せず、時間をおいて結果を確認してください。'));
+      }
+      catch (error) { if (current()) say(error.message); } finally { if (current()) check.disabled = false; }
     });
     retry.addEventListener('click', transmit);
     fresh.addEventListener('click', async () => {
       if (busy) return;
       if ((state.messages.length || state.pending) && !window.confirm(__('新しい相談を始めますか？ 前の処理や確認待ちの操作は取り消されません。'))) return;
       fresh.disabled = true;
-      try { await attachments?.reset(); const data = options.newConversation ? await options.newConversation() : {}; state = {messages: [], pending: null, conversation_id: '', thread_id: data.thread_id || ''}; visibleCount = 40; save(); recover.hidden = true; redraw(); activity(false); say(__('新しい相談を始められます。')); input.focus(); } catch (error) { say(error.message); } finally { fresh.disabled = false; }
+      try { await attachments?.reset(); artifacts?.abort(); const data = options.newConversation ? await options.newConversation() : {}; state = {messages: [], pending: null, conversation_id: '', thread_id: data.thread_id || '', ...(options.preserveDraft ? {draft: input.value} : {})}; visibleCount = 40; save(); recover.hidden = true; redraw(); activity(false); say(__('新しい相談を始められます。')); input.focus(); } catch (error) { say(error.message); } finally { fresh.disabled = false; }
     });
     history.addEventListener('click', async () => {
+      if (options.conversations && !busy && !state.pending) {
+        history.disabled = true;
+        try {
+          const data = await options.conversations();
+          const choices = node('section', 'fmi-chat__history'); choices.setAttribute('aria-label', __('相談履歴'));
+          choices.append(node('h3', '', __('相談履歴')));
+          const dismiss = button(__('履歴を閉じる')); dismiss.addEventListener('click', () => choices.remove()); choices.append(dismiss);
+          if (!(data.data || []).length) choices.append(node('p', '', __('保存された相談はありません。')));
+          const more = button(__('さらに相談履歴を読み込む')); let nextPage = data.page + 1;
+          const addChoices = (rows) => rows.forEach((row) => {
+            const choice = button(row.title || __('タイトルのない相談')); choices.append(choice);
+            choice.addEventListener('click', async () => {
+              if (busy || attachments?.readyCount() || attachments?.hasBlocking()) { say(__('添付したファイルを送信または取り除いてから、相談を切り替えてください。')); return; }
+              const turn = ++generation;
+              busy = true; choices.querySelectorAll('button').forEach((item) => { item.disabled = true; }); send.disabled = true; fresh.disabled = true; history.disabled = true;
+              try {
+                artifacts?.abort();
+                const restored = await options.history(row.identify);
+                if (disposed || turn !== generation) return;
+                state = {messages: (restored.messages || []).filter((item) => ['user', 'assistant'].includes(item.role)).map((item) => ({...item, actions: actionIds(item.data)})), conversation_id: row.identify, thread_id: restored.thread_id || state.thread_id, pending: null, active_run: restored.active_run, latest_run: restored.latest_run, before_id: restored.before_id, has_more: restored.has_more};
+                save(); redraw(); activity(false); say(restored.active_run ? __('この相談は処理中です。結果を確認してから続けてください。') : __('相談履歴を読み込みました。'));
+              } catch (error) { say(error.message); choices.querySelectorAll('button').forEach((item) => { item.disabled = false; }); }
+              finally { if (!disposed && turn === generation) activity(false); }
+            });
+          });
+          addChoices(data.data || []); more.hidden = !data.has_more; choices.append(more);
+          more.addEventListener('click', async () => {
+            more.disabled = true;
+            try { const older = await options.conversations(nextPage); if (disposed || !choices.isConnected) return; addChoices(older.data || []); nextPage = older.page + 1; more.hidden = !older.has_more; choices.append(more); }
+            catch (error) { say(error.message); } finally { more.disabled = false; }
+          });
+          log.querySelector('.fmi-chat__history')?.remove(); log.prepend(choices); log.scrollTop = 0;
+        } catch (error) { say(error.message); } finally { history.disabled = false; }
+        return;
+      }
       if (!state.conversation_id || busy || state.pending) { say(__('送信結果を確認した会話の履歴を読み込めます。')); return; }
       history.disabled = true;
       const conversation = state.conversation_id, turn = generation;
@@ -187,22 +341,42 @@
           // 重複文を位置で対応できない場合は、別の添付を推測して付けない。
           const matches = aligned ? [prior[index]] : prior.filter((item) => same(row, item));
           const known = matches.length === 1 && (aligned || rows.filter((item) => same(row, item)).length === 1) ? matches[0] : null;
-          return {role: row.role, content: row.content, data: row.data, attachments: row.attachments ?? known?.attachments,
+          return {role: row.role, content: row.content, data: row.data, artifacts: row.artifacts || row.data?.artifacts, attachments: row.attachments ?? known?.attachments,
+            run_id: row.run_id, run_state: row.run_state,
             follow_up_questions: row.follow_up_questions ?? known?.follow_up_questions};
         });
-        save(); redraw(); say(__('会話履歴を読み込みました。'));
+        state.latest_run = data.latest_run; save(); redraw(); say(__('会話履歴を読み込みました。'));
       } catch (error) { say(error.message); } finally { history.disabled = false; }
     });
-    const leave = () => { if (busy) { ++generation; controller?.abort(); controller = null; save(); unknown(); } };
+    const leave = () => { artifacts?.abort(); if (busy) { ++generation; controller?.abort(); controller = null; save(); unknown(); } };
     const resume = (event) => { if (event.persisted && state.pending) unknown(); };
+    async function hydrateLegacyTurns() {
+      if (!options.conversations || !options.history || !state.conversation_id || state.pending || state.active_run || busy
+        || state.terminal_metadata_version === 1 || !state.messages.some((item) => item.role === 'user' && (!item.run_id || !item.run_state))) return;
+      const conversation = state.conversation_id, thread = state.thread_id, turn = generation;
+      const current = () => !disposed && turn === generation && state.conversation_id === conversation && state.thread_id === thread && !state.pending;
+      activity(true); stop.hidden = true; say(__('保存された会話の処理状態を確認しています…'));
+      try {
+        const data = await options.history(conversation);
+        if (!current()) return;
+        if (data.identify !== conversation || !Array.isArray(data.messages)) throw new Error(__('会話履歴を確認できませんでした。'));
+        state.messages = data.messages.filter((item) => ['user', 'assistant'].includes(item.role)).map((item) => ({...item, actions: actionIds(item.data)}));
+        state.thread_id = data.thread_id || thread; state.active_run = data.active_run; state.latest_run = data.latest_run;
+        state.before_id = data.before_id; state.has_more = data.has_more; state.terminal_metadata_version = 1;
+        state.draft = input.value; save(); redraw();
+        say(data.active_run ? __('この相談は処理中です。結果を確認してから続けてください。') : __('会話の処理状態を確認しました。'));
+      } catch (_) {
+        if (current()) say(__('会話の処理状態を同期できませんでした。本文は保持しています。相談履歴から再確認してください。'));
+      } finally { if (!disposed && turn === generation) activity(false); }
+    }
     let follow = true;
     log.addEventListener('scroll', () => { follow = log.scrollHeight - log.scrollTop - log.clientHeight < 80; });
     const resize = () => { const end = follow; if (end) requestAnimationFrame(scroll); };
     window.addEventListener('resize', resize);
     window.addEventListener('pagehide', leave);
     window.addEventListener('pageshow', resume);
-    redraw(); activity(false); if (state.pending) unknown();
-    return {dispose() { disposed = true; ++generation; controller?.abort(); attachments?.dispose(); clearTimeout(renderTimer); messageNodes.clear(); save(); window.removeEventListener('pagehide', leave); window.removeEventListener('pageshow', resume); window.removeEventListener('resize', resize); }, input};
+    redraw(); activity(false); if (state.pending) unknown(); else hydrateLegacyTurns();
+    return {dispose() { disposed = true; ++generation; controller?.abort(); attachments?.dispose(); artifacts?.abort(); clearTimeout(renderTimer); messageNodes.clear(); save(); window.removeEventListener('pagehide', leave); window.removeEventListener('pageshow', resume); window.removeEventListener('resize', resize); }, input};
   }
   async function stream(endpoint, init, signal, onEvent) {
     const reply = await fetch(endpoint, {...init, signal});
@@ -211,7 +385,7 @@
     const reader = reply.body.getReader(), decoder = new TextDecoder(); let buffer = '', completed = null, received = 0;
     function line(value) {
       if (!value.trim()) return; const event = JSON.parse(value); if (!event || typeof event.type !== 'string' || !event.data) throw new Error(__('応答の形式を確認できませんでした。'));
-      if (event.type === 'run.failed') { const error = new Error(event.data.message || __('結果を確認できませんでした。')); error.status = event.data.status_code; error.loginUrl = event.data.login_url; throw error; }
+      if (event.type === 'run.failed') { const error = new Error(event.data.message || __('結果を確認できませんでした。')); error.status = event.data.status_code; error.code = event.data.code; error.loginUrl = event.data.login_url; throw error; }
       onEvent(event); if (event.type === 'run.completed') completed = event.data.response;
     }
     try { while (true) { const {value, done} = await reader.read(); received += value?.byteLength || 0; if (received > 2 * 1024 * 1024) throw new Error(__('応答が大きすぎます。送信結果を確認してください。')); buffer += decoder.decode(value || new Uint8Array(), {stream: !done}); const lines = buffer.split('\n'); buffer = lines.pop() || ''; lines.forEach(line); if (done) break; } line(buffer); if (!completed) throw new Error(__('応答が途中で切れました。送信結果を確認してください。')); return completed; }

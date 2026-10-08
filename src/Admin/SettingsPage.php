@@ -2,6 +2,8 @@
 
 namespace FourmixIntelligence\WordPress\Admin;
 
+use FourmixIntelligence\WordPress\Support\Options;
+
 final class SettingsPage {
 	public function register(): void {
 		add_action( 'admin_menu', array( $this, 'menu' ) );
@@ -92,14 +94,47 @@ final class SettingsPage {
 		return $links;
 	}
 
+	/** 管理画面だけで接続状態を案内し、保存済み設定や秘密値は変更しません。 */
+	private function customer_catalog( array $options ): array {
+		$state = array(
+			'items'              => array(),
+			'preserve_selection' => true,
+			'message'            => '',
+		);
+		if ( empty( $options['token'] ) ) {
+			$state['message'] = __( '公開トークンを設定すると、お客様向けAIの一覧を取得できます。', 'fourmix-intelligence' );
+			return $state;
+		}
+		try {
+			$state['items']              = ( new \FourmixIntelligence\WordPress\Http\Client() )->catalog( 'customer' );
+			$state['preserve_selection'] = ! in_array( $options['agent'] ?? '', wp_list_pluck( $state['items'], 'name' ), true );
+			if ( $state['preserve_selection'] && ! empty( $options['agent'] ) ) {
+				$state['message'] = __( '保存済みのAIを現在の公開トークンで確認できません。Studioの公開状態と利用範囲を確認してください。現在の選択は保持しています。', 'fourmix-intelligence' );
+			}
+		} catch ( \Throwable $error ) {
+			$state['message'] = match ( (int) $error->getCode() ) {
+				401 => __( '公開トークンの認証を確認できません。無効または期限切れの可能性があります。Studioで公開トークンを確認し、必要に応じて上の欄で更新してください。現在の選択は保持しています。', 'fourmix-intelligence' ),
+				403 => __( 'この公開トークンではAI一覧を取得できません。Studioの公開状態と利用範囲を確認してください。現在の選択は保持しています。', 'fourmix-intelligence' ),
+				default => __( '接続先からAI一覧を取得できませんでした。接続先と通信状態を確認し、時間をおいてページを再読み込みしてください。現在の選択は保持しています。', 'fourmix-intelligence' ),
+			};
+		}
+		return $state;
+	}
+
 	public function render(): void {
 		if ( ! current_user_can( 'manage_options' ) ) {
 			return; }
 		$options    = (array) get_option( 'fourmix_intelligence_settings', array() );
 		$post_types = get_post_types( array( 'public' => true ), 'objects' );
+		global $wpdb;
+		$sync_target = hash( 'sha256', rtrim( (string) Options::get( 'url', 'https://platform.ai.fourmix.co.jp/intelligence' ), '/' ) . "\n" . (string) Options::get( 'dataset' ) );
+		$held_sync = (int) $wpdb->get_var( $wpdb->prepare( 'SELECT COUNT(*) FROM %i WHERE target_hash <> %s', $wpdb->prefix . 'fourmix_intelligence_outbox', $sync_target ) ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery
 		?>
 		<div class="wrap"><h1 class="fmi-brand-heading"><img src="<?php echo esc_url( FOURMIX_INTELLIGENCE_URL . 'assets/brand/fourmix-intelligence-icon.png' ); ?>" alt="" width="36" height="36"><?php esc_html_e( 'Fourmix Intelligence 連携設定', 'fourmix-intelligence' ); ?></h1>
 		<p><?php esc_html_e( 'サイトの案内、AI接客、コンテンツ同期を一つの設定で管理します。秘密情報はブラウザーへ公開されません。', 'fourmix-intelligence' ); ?></p>
+		<?php if ( $held_sync ) : ?>
+		<div class="notice notice-warning"><p><?php esc_html_e( '送信先が異なる、または確認できない同期記録を保留しています。現在の送信先へ自動転送しません。同期したい公開内容を確認し、再保存してください。', 'fourmix-intelligence' ); ?></p></div>
+		<?php endif; ?>
 		<form action="options.php" method="post"><?php settings_fields( 'fourmix_intelligence' ); ?>
 		<table class="form-table" role="presentation">
 		<?php
@@ -109,15 +144,19 @@ final class SettingsPage {
 		<tr><th><label for="fmi-token"><?php esc_html_e( 'お客様向けAIの公開トークン', 'fourmix-intelligence' ); ?></label></th><td><input class="regular-text" id="fmi-token" name="fourmix_intelligence_settings[token]" type="password" autocomplete="new-password" value="" placeholder="<?php echo esc_attr( empty( $options['token'] ) ? __( 'お客様向けAIを公開する場合のみ入力', 'fourmix-intelligence' ) : __( '設定済み（変更する場合のみ入力）', 'fourmix-intelligence' ) ); ?>"></td></tr>
 		<tr><th><label for="fmi-agent"><?php esc_html_e( 'お客様向けAI', 'fourmix-intelligence' ); ?></label></th><td><select id="fmi-agent" name="fourmix_intelligence_settings[agent]"><option value=""><?php esc_html_e( 'Studioで作成したAIを選択', 'fourmix-intelligence' ); ?></option>
 		<?php
-		try {
-			foreach ( ( new \FourmixIntelligence\WordPress\Http\Client() )->catalog( 'customer' ) as $agent ) {
-				printf( '<option value="%1$s" %2$s>%3$s</option>', esc_attr( $agent['name'] ), selected( $options['agent'] ?? '', $agent['name'], false ), esc_html( $agent['service_name'] ?? $agent['name'] ) );
-			}
-		} catch ( \Throwable $error ) {
-			echo '<option value="' . esc_attr( $options['agent'] ?? '' ) . '" selected>' . esc_html__( '接続後にAI一覧を取得します', 'fourmix-intelligence' ) . '</option>';
+		$catalog_state = $this->customer_catalog( $options );
+		foreach ( $catalog_state['items'] as $agent ) {
+			printf( '<option value="%1$s" %2$s>%3$s</option>', esc_attr( $agent['name'] ), selected( $options['agent'] ?? '', $agent['name'], false ), esc_html( $agent['service_name'] ?? $agent['name'] ) );
+		}
+		if ( $catalog_state['preserve_selection'] && ! empty( $options['agent'] ) ) {
+			echo '<option value="' . esc_attr( $options['agent'] ) . '" selected>' . esc_html__( '現在の選択（保存済み）', 'fourmix-intelligence' ) . '</option>';
 		}
 		?>
-		</select><p class="description"><?php esc_html_e( 'AIはすべてFourmix IntelligenceのStudioで作成します。ここでは公開するAIだけを選びます。', 'fourmix-intelligence' ); ?></p></td></tr>
+		</select>
+		<?php if ( $catalog_state['message'] ) : ?>
+		<p class="description" role="status"><?php echo esc_html( $catalog_state['message'] ); ?></p>
+		<?php endif; ?>
+		<p class="description"><?php esc_html_e( 'AIはすべてFourmix IntelligenceのStudioで作成します。ここでは公開するAIだけを選びます。', 'fourmix-intelligence' ); ?></p></td></tr>
 		<tr><th><?php esc_html_e( '社内向けAI', 'fourmix-intelligence' ); ?></th><td><a href="<?php echo esc_url( admin_url( 'admin.php?page=fourmix-intelligence-personal-settings' ) ); ?>"><?php esc_html_e( '社内向けAIの設定を開く', 'fourmix-intelligence' ); ?></a><p class="description"><?php esc_html_e( 'Fourmix Intelligence にログイン後、ワークスペースの社内向けAIから選択します。', 'fourmix-intelligence' ); ?></p></td></tr>
 		<tr><th><?php esc_html_e( '接続の実行ユーザー', 'fourmix-intelligence' ); ?></th><td>
 		<?php

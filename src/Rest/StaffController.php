@@ -20,7 +20,7 @@ final class StaffController {
 	}
 
 	public function routes(): void {
-		foreach ( array( 'connect', 'catalog', 'select', 'chat', 'chat_stream', 'session', 'run_status', 'new_conversation', 'action', 'confirm_action', 'preview', 'confirm' ) as $action ) {
+		foreach ( array( 'connect', 'catalog', 'select', 'chat', 'chat_stream', 'session', 'run_status', 'cancel_run', 'artifact_content', 'new_conversation', 'conversations', 'history', 'action', 'confirm_action', 'reject_action', 'preview', 'confirm' ) as $action ) {
 			register_rest_route(
 				'fourmix-intelligence/v1',
 				'/staff/' . $action,
@@ -149,7 +149,7 @@ final class StaffController {
 			'status' => $post->post_status,
 		);
 	}
-	public function attachment_access( WP_REST_Request $request, bool $create = false ): array {
+	public function attachment_access( WP_REST_Request $request, bool $create = false, bool $with_policy = true ): array {
 		list( $token, $agent, $scope ) = $this->identity( $request );
 		$state                         = (array) get_transient( $scope );
 		if ( empty( $state['thread_id'] ) || ! hash_equals( $state['thread_id'], (string) $request->get_param( 'thread_id' ) ) ) {
@@ -160,7 +160,7 @@ final class StaffController {
 		if ( $requested && ! hash_equals( $id, $requested ) ) {
 			throw new \RuntimeException( esc_html__( 'attachment_conversation', 'fourmix-intelligence' ) );
 		}
-		$manifest = ( new Client() )->request( 'GET', '/api/v3/ai/plugins/' . rawurlencode( $agent ) . '/metadata', null, $token );
+		$manifest = $with_policy ? ( new Client() )->request( 'GET', '/api/v3/ai/plugins/' . rawurlencode( $agent ) . '/metadata', null, $token ) : array();
 		$policy   = \FourmixIntelligence\WordPress\Support\Attachments::policy( (array) ( $manifest['attachments'] ?? array() ) );
 		if ( $create && ! $id && $policy['enabled'] ) {
 			$conversation = ( new Client() )->request( 'POST', '/api/v3/agent-conversations/' . rawurlencode( $agent ) . '/resolve', array(), $token, platform: true );
@@ -180,6 +180,56 @@ final class StaffController {
 			'policy'          => $policy,
 			'headers'         => array(),
 		);
+	}
+
+	/** 現在の本人・AI・会話で保存済み成果物だけを取得。添付可否や旧署名URLに依存しません。 */
+	public function artifact_content( WP_REST_Request $request ): WP_REST_Response {
+		try {
+			$access = $this->attachment_access( $request, false, false );
+			$id     = (string) $request->get_param( 'id' );
+			if ( ! \FourmixIntelligence\WordPress\Support\Attachments::uuid( $id ) || ! \FourmixIntelligence\WordPress\Support\Attachments::uuid( $access['conversation_id'] ) ) {
+				throw new \InvalidArgumentException( 'artifact_conversation' );
+			}
+			$path   = '/api/v3/ai/plugins/' . rawurlencode( $access['agent'] ) . '/conversations/' . rawurlencode( $access['conversation_id'] ) . '/artifacts/' . rawurlencode( $id ) . '/content';
+			$reply  = ( new Client() )->raw( 'GET', $path, null, $access['token'], $access['headers'] );
+			$body   = wp_remote_retrieve_body( $reply );
+			$length = wp_remote_retrieve_header( $reply, 'content-length' );
+			if ( '' === $body || ( $length && strlen( $body ) !== (int) $length ) ) {
+				throw new \RuntimeException( 'artifact_body', 502 );
+			}
+			$response = new WP_REST_Response(
+				null,
+				200,
+				array(
+					'Content-Type'            => 'application/octet-stream',
+					'Content-Disposition'     => 'attachment',
+					'Cache-Control'           => 'private, no-store',
+					'X-Content-Type-Options'  => 'nosniff',
+					'Content-Security-Policy' => "sandbox; default-src 'none'",
+				)
+			);
+			add_filter(
+				'rest_pre_serve_request',
+				static function ( $served, $result ) use ( $body, $response ) {
+					if ( $result !== $response ) {
+						return $served; }
+					echo $body; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- 認可済みの成果物原本をattachmentで返します。
+					return true;
+				},
+				10,
+				2
+			);
+			return $response;
+		} catch ( \Throwable $error ) {
+			$status = in_array( $error->getCode(), array( 401, 403, 404, 410, 503 ), true ) ? $error->getCode() : 403;
+			return $this->reply(
+				array(
+					'message'   => 401 === $status ? __( 'Fourmix Intelligence に再度ログインしてください。', 'fourmix-intelligence' ) : __( '生成ファイルの期限と本人・会話の権限を確認してください。', 'fourmix-intelligence' ),
+					'login_url' => 401 === $status ? \FourmixIntelligence\WordPress\Support\NativeIdentity::login_url() : null,
+				),
+				$status
+			);
+		}
 	}
 
 	public function session( WP_REST_Request $request ): WP_REST_Response {
@@ -214,10 +264,105 @@ final class StaffController {
 
 	public function run_status( WP_REST_Request $request ): WP_REST_Response {
 		try {
-			list( , , $scope ) = $this->identity( $request );
-			return $this->reply( ChatSession::status( $scope, (string) $request->get_param( 'request_id' ) ) );
+			list( $token, $agent, $scope ) = $this->identity( $request );
+			$key                           = ChatSession::key( (string) $request->get_param( 'request_id' ) );
+			$status                        = ChatSession::status( $scope, $key );
+			$state                         = (array) get_transient( $scope );
+			if ( 'unknown_effect' === $status['state'] && ( $state['request_id'] ?? '' ) === $key
+				&& ( $state['thread_id'] ?? '' ) === $request->get_param( 'thread_id' )
+				&& ( $state['conversation_id'] ?? '' ) === $request->get_param( 'conversation_id' )
+				&& ( $state['run_id'] ?? '' ) === $request->get_param( 'run_id' )
+				&& \FourmixIntelligence\WordPress\Support\Attachments::uuid( (string) ( $state['run_id'] ?? '' ) )
+				&& \FourmixIntelligence\WordPress\Support\Attachments::uuid( (string) ( $state['conversation_id'] ?? '' ) ) ) {
+				$canonical = ( new Client() )->request( 'POST', '/api/v3/agent-conversations/' . rawurlencode( $agent ) . '/' . rawurlencode( $state['conversation_id'] ) . '/runs/' . rawurlencode( $state['run_id'] ) . '/result', array( 'workspace_id' => null ), $token, platform: true );
+				if ( true === ( $canonical['finalized'] ?? false ) && ( $canonical['run_id'] ?? '' ) === $state['run_id'] ) {
+					$status = array(
+						'state'    => 'canonical',
+						'response' => $canonical,
+					);
+				}
+			}
+			return $this->reply( $status );
 		} catch ( \Throwable $error ) {
 			return $this->error( $error, 403 );
+		}
+	}
+
+	public function conversations( WP_REST_Request $request ): WP_REST_Response {
+		try {
+			list( $token, $agent ) = $this->identity( $request );
+			return $this->reply( ( new Client() )->request( 'POST', '/api/v3/native-business/agents/' . rawurlencode( $agent ) . '/conversations', array( 'page' => max( 1, min( 10000, (int) $request->get_param( 'page' ) ) ) ), $token, platform: true ) );
+		} catch ( \Throwable $error ) {
+			return $this->error( $error );
+		}
+	}
+
+	public function cancel_run( WP_REST_Request $request ): WP_REST_Response {
+		try {
+			list( $token, $agent, $scope ) = $this->identity( $request );
+			$state                         = (array) get_transient( $scope );
+			$conversation                  = (string) $request->get_param( 'conversation_id' );
+			$run                           = (string) $request->get_param( 'run_id' );
+			if ( ! \FourmixIntelligence\WordPress\Support\Attachments::uuid( $run ) || ! \FourmixIntelligence\WordPress\Support\Attachments::uuid( $conversation ) || ( $state['conversation_id'] ?? '' ) !== $conversation || ( $state['run_id'] ?? '' ) !== $run || ( $state['thread_id'] ?? '' ) !== $request->get_param( 'thread_id' ) ) {
+				throw new \RuntimeException( esc_html__( 'この会話の処理を確認できません。履歴と送信結果を確認してください。', 'fourmix-intelligence' ) );
+			}
+			return $this->reply( ( new Client() )->request( 'POST', '/api/v3/agent-conversations/' . rawurlencode( $agent ) . '/' . rawurlencode( $conversation ) . '/runs/' . rawurlencode( $run ) . '/cancel', array( 'workspace_id' => null ), $token, platform: true ) );
+		} catch ( \Throwable $error ) {
+			return $this->error( $error );
+		}
+	}
+
+	public function history( WP_REST_Request $request ): WP_REST_Response {
+		try {
+			list( $token, $agent, $scope ) = $this->identity( $request );
+			$id                            = (string) $request->get_param( 'conversation_id' );
+			if ( ! \FourmixIntelligence\WordPress\Support\Attachments::uuid( $id ) ) {
+				throw new \RuntimeException( esc_html__( '会話を選択してください。', 'fourmix-intelligence' ) );
+			}
+			$body = array( 'conversation_id' => $id );
+			if ( $request->get_param( 'before_id' ) ) {
+				$body['before_id'] = max( 1, (int) $request->get_param( 'before_id' ) );
+			}
+			$data = ( new Client() )->request( 'POST', '/api/v3/native-business/agents/' . rawurlencode( $agent ) . '/history', $body, $token, platform: true );
+			$ids  = array();
+			foreach ( (array) ( $data['messages'] ?? array() ) as $row ) {
+				$ids = array_merge( $ids, (array) ( $row['data']['attachment_ids'] ?? array() ) );
+			}
+			if ( $ids ) {
+				$files = array();
+				try {
+					$listed = ( new Client() )->request( 'GET', '/api/v3/ai/plugins/' . rawurlencode( $agent ) . '/conversations/' . rawurlencode( $id ) . '/attachments', null, $token );
+					foreach ( (array) ( $listed['data'] ?? array() ) as $file ) {
+						$files[ $file['id'] ] = array_intersect_key( $file, array_flip( array( 'id', 'name', 'mime', 'size', 'expires_at' ) ) ) + array( 'conversation_id' => $id );
+					}
+				} catch ( \Throwable $error ) {
+					// 履歴原文を失わず、添付を確認できない状態を明示します。
+				}
+				foreach ( $data['messages'] as &$row ) {
+					$row['attachments'] = array_map(
+						static fn( $attachment ) => $files[ $attachment ] ?? array(
+							'id'          => $attachment,
+							'unavailable' => true,
+							'name'        => __( '添付ファイル（期限・権限を確認できません）', 'fourmix-intelligence' ),
+						),
+						(array) ( $row['data']['attachment_ids'] ?? array() )
+					);
+				}
+				unset( $row );
+			}
+			$state = (array) get_transient( $scope );
+			if ( ( $state['conversation_id'] ?? '' ) !== $id ) {
+				$state = array(
+					'thread_id'       => wp_generate_uuid4(),
+					'conversation_id' => $id,
+				);
+			}
+			$state['actions'] = array_values( array_unique( array_merge( (array) ( $state['actions'] ?? array() ), ChatSession::actions( $data ) ) ) );
+			set_transient( $scope, $state, 15 * MINUTE_IN_SECONDS );
+			$data['thread_id'] = $state['thread_id'];
+			return $this->reply( $data );
+		} catch ( \Throwable $error ) {
+			return $this->error( $error );
 		}
 	}
 
@@ -263,7 +408,7 @@ final class StaffController {
 				'messages' => array(
 					array(
 						'role'    => 'user',
-						'content' => $message . "\n現在の業務画面（参考情報）:\n" . wp_json_encode( $context ),
+						'content' => $message,
 					),
 				),
 				'options'  => array( 'native_context' => $context ),
@@ -286,9 +431,21 @@ final class StaffController {
 					'attachments' => $ids,
 					'context'     => $context,
 				),
-				function () use ( $body, $token, $agent, $scope, $state, $emit ) {
+				function () use ( $body, $token, $agent, $scope, $state, $emit, $key ) {
 					$path     = '/api/v3/ai/plugins/' . rawurlencode( $agent ) . '/runs';
-					$response = $emit ? ( new Client() )->stream( $path . '/stream', $body, $token, $emit ) : ( new Client() )->request( 'POST', $path, $body, $token );
+					$forward  = static function ( array $event ) use ( $emit, $scope, $state, $key ): void {
+						if ( 'run.created' === ( $event['type'] ?? '' ) ) {
+							$current = (array) get_transient( $scope );
+							if ( ( $current['thread_id'] ?? '' ) === $state['thread_id'] ) {
+								$current['conversation_id'] = $event['data']['conversation_id'] ?? '';
+								$current['run_id']          = $event['run_id'] ?? '';
+								$current['request_id']      = $key;
+								set_transient( $scope, $current, 15 * MINUTE_IN_SECONDS );
+							}
+						}
+						$emit( $event );
+					};
+					$response = $emit ? ( new Client() )->stream( $path . '/stream', $body, $token, $forward ) : ( new Client() )->request( 'POST', $path, $body, $token );
 					$current  = (array) get_transient( $scope );
 					if ( ( $current['thread_id'] ?? '' ) === $state['thread_id'] ) {
 						$current['conversation_id'] = $response['conversation_id'] ?? ( $current['conversation_id'] ?? '' );
@@ -340,7 +497,7 @@ final class StaffController {
 			}
 			return $this->reply( $response );
 		} catch ( \Throwable $error ) {
-			return $this->error( $error, 403 );
+			return $this->error( $error );
 		}
 	}
 
@@ -353,6 +510,19 @@ final class StaffController {
 		$args = (array) ( $preview['arguments'] ?? array() );
 		unset( $args['idempotency_key'] );
 		( new NativeBridgeController() )->validate_operation( $name, $args );
+	}
+
+	public function reject_action( WP_REST_Request $request ): WP_REST_Response {
+		try {
+			list( $token, , $id ) = $this->require_action( $request );
+			$preview              = ( new Client() )->request( 'GET', '/api/v3/connection-actions/' . rawurlencode( $id ), null, $token, platform: true );
+			if ( 'confirmation_required' === ( $preview['status'] ?? '' ) ) {
+				$this->validate_native_action( $preview );
+			}
+			return $this->reply( ( new Client() )->request( 'POST', '/api/v3/connection-actions/' . rawurlencode( $id ) . '/reject', array(), $token, platform: true ) );
+		} catch ( \Throwable $error ) {
+			return $this->error( $error, 403 );
+		}
 	}
 
 	public function confirm_action( WP_REST_Request $request ): WP_REST_Response {

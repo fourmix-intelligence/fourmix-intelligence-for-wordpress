@@ -62,14 +62,15 @@ final class Client {
 	}
 	/** 上流のNDJSON断片だけを即時転送し、完了後の分割再生はしません。 */
 	public function stream( string $path, array $body, ?string $token, callable $emit ): array {
-		$buffer  = '';
-		$bytes   = 0;
-		$created = array();
-		$final   = null;
-		$failure = null;
-		$used    = false;
-		$url     = $this->url( $path );
-		$read    = static function ( string $chunk ) use ( &$buffer, &$bytes, &$created, &$final, &$failure, $emit ): void {
+		$buffer    = '';
+		$bytes     = 0;
+		$created   = array();
+		$final     = null;
+		$failure   = null;
+		$cancelled = null;
+		$used      = false;
+		$url       = $this->url( $path );
+		$read      = static function ( string $chunk ) use ( &$buffer, &$bytes, &$created, &$final, &$failure, &$cancelled, $emit ): void {
 			$bytes += strlen( $chunk );
 			if ( $bytes > 2 * MB_IN_BYTES ) {
 				$failure = true;
@@ -94,13 +95,17 @@ final class Client {
 					$final = $event['data']['result'] ?? null;
 					continue;
 				} elseif ( 'run.failed' === $event['type'] ) {
+					if ( 'RUN_CANCELLED' === ( $event['data']['code'] ?? '' ) ) {
+						$cancelled = $event['data'];
+						continue;
+					}
 					$failure = true;
 					continue;
 				}
 				$emit( $event );
 			}
 		};
-		$curl    = static function ( $handle, $args, $target ) use ( $url, $read, &$used, &$failure ): void {
+		$curl      = static function ( $handle, $args, $target ) use ( $url, $read, &$used, &$failure ): void {
 			if ( $target !== $url ) {
 				return;
 			}
@@ -126,6 +131,15 @@ final class Client {
 			$this->raw( 'POST', $path, wp_json_encode( $body ), $token, array( 'Accept' => 'application/x-ndjson' ) );
 			if ( '' !== trim( $buffer ) ) {
 				$read( "\n" );
+			}
+			if ( $used && ! $failure && is_array( $cancelled ) ) {
+				return array(
+					'state'           => 'cancelled',
+					'code'            => 'RUN_CANCELLED',
+					'run_id'          => $created['run_id'] ?? '',
+					'conversation_id' => $created['data']['conversation_id'] ?? '',
+					'message'         => $cancelled['message'] ?? __( '処理を停止しました。実行済みの操作は取り消されません。', 'fourmix-intelligence' ),
+				);
 			}
 			if ( ! $used || $failure || ! is_array( $final ) ) {
 				throw new \RuntimeException( esc_html__( '回答の完了を確認できません。再送せず送信結果を確認してください。', 'fourmix-intelligence' ) );

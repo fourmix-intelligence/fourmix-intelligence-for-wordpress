@@ -8,11 +8,15 @@
     const policy = options.policy; if (!policy?.enabled) return null;
     const key = 'fourmix_intelligence_attachment_drafts_' + options.scope;
     let items = [], disposed = false, preparing = null, prepareKey = requestId(); const urls = new Map(), controllers = new Set();
-    const imageItems = new WeakMap();
+    const imageItems = new WeakMap(), reads = new Set(); let revision = 0, readScope = null;
+    const current = (scope, version) => !disposed && version === revision && JSON.stringify(scope) === JSON.stringify(identity());
+    function abortReads() { ++revision; reads.forEach(controller => controller.abort()); reads.clear(); urls.forEach(value => value.then(url => URL.revokeObjectURL(url)).catch(() => {})); urls.clear(); }
+    const stale = () => Object.assign(new Error(__('現在の会話を選び直してから取得してください。')), {name: 'AbortError'});
     const observer = new IntersectionObserver((entries) => { entries.forEach(({target, isIntersecting}) => {
       if (!target.isConnected) { observer.unobserve(target); return; }
       if (!isIntersecting) return; observer.unobserve(target);
-      blob(imageItems.get(target)).then((url) => { if (target.isConnected && !disposed) target.src = url; }).catch(() => { target.alt = __('画像を取得できません。期限と権限を確認してください。'); });
+      const {item, scope, version} = imageItems.get(target);
+      blob(item, scope, version).then(url => { if (target.isConnected && current(scope, version)) target.src = url; }).catch(error => { if (target.isConnected && current(scope, version) && error.name !== 'AbortError') target.alt = __('画像を取得できません。期限と権限を確認してください。'); });
     }); }, {root: form.parentElement.querySelector('.fmi-chat__messages'), rootMargin: '160px'});
     function cache(id, pending) {
       urls.delete(id); urls.set(id, pending);
@@ -22,6 +26,10 @@
     const group = node('div', 'fmi-attachments'), list = node('div', 'fmi-attachments-list'), status = node('p', 'fmi-attachments-status'); status.setAttribute('role', 'status');
     const choose = button(__('画像・ファイルを添付')), input = document.createElement('input'); input.type = 'file'; input.multiple = true; input.accept = policy.extensions.join(','); input.hidden = true; input.setAttribute('aria-label', __('添付ファイルを選択'));
     group.append(choose, input, list, status); form.insertBefore(group, form.querySelector('.fmi-chat__controls'));
+    // 公開ページの短い会話領域では、添付の詳細を入力欄の上に展開する。
+    const compact = form.closest('.fmi-block') ? node('details', 'fmi-attachments-summary') : null;
+    const summary = compact ? node('summary') : null;
+    if (compact) { compact.append(summary, list); group.insertBefore(compact, status); compact.hidden = true; }
     const identity = (extra = {}) => ({...options.identity(), ...extra});
     const save = () => { try { sessionStorage.setItem(key, JSON.stringify({at: Date.now(), items: items.map(({file, controller, preview, ...item}) => item)})); } catch (_) {} };
     async function json(action, extra = {}) {
@@ -67,11 +75,18 @@
       try {
         if (item.unknown) { const done = await recover(item); if (!done && item.unknown) return; }
         if (item.id) { const value = await json('remove', {id: item.id, request_id: item.remove_key ||= requestId(), conversation_id: item.conversation_id}); if (!value.removed) throw new Error(__('削除結果を確認できません。添付を残して再送を止めています。')); }
+        const restoreFocus = list.contains(document.activeElement);
         items = items.filter((value) => value !== item); if (item.preview) URL.revokeObjectURL(item.preview); status.textContent = ''; notify();
+        if (restoreFocus) (compact && items.length ? summary : choose).focus();
       } catch (error) { item.error = error.message; status.textContent = error.message; notify(); }
     }
     function draw() {
       list.replaceChildren();
+      if (compact) {
+        compact.hidden = !items.length;
+        summary.textContent = __('添付ファイル') + ' (' + items.length + ') · ' +
+          (items.some(item => item.uploading) ? __('保存中') : items.some(item => item.error || item.unknown) ? __('確認が必要') : __('保存済み'));
+      }
       items.forEach((item) => {
         const card = node('div', 'fmi-attachment');
         if (item.preview) { const preview = node('img', 'fmi-attachment-preview'); preview.src = item.preview; preview.alt = item.name; card.append(preview); }
@@ -88,36 +103,65 @@
       for (const file of files) {
         const extension = '.' + file.name.split('.').pop().toLowerCase();
         if (items.length >= policy.max_files) { status.textContent = __('一度に添付できる件数を超えています。'); break; }
-        if (!policy.extensions.includes(extension) || !file.size || file.size > policy.max_bytes || items.reduce((total, item) => total + item.size, file.size) > policy.context_bytes) { status.textContent = __('形式またはサイズの上限を確認してください。') + ' ' + file.name; continue; }
+        if (!file.size) { status.textContent = __('空のファイルは添付できません。') + ' ' + file.name; continue; }
+        if (!policy.extensions.includes(extension) || file.size > policy.max_bytes || items.reduce((total, item) => total + item.size, file.size) > policy.context_bytes) { status.textContent = __('形式またはサイズの上限を確認してください。') + ' ' + file.name; continue; }
         const item = {localId: crypto.randomUUID(), request_id: requestId(), name: file.name, size: file.size, mime: file.type, file, progress: 0, uploading: false, error: '', unknown: false};
         if (['image/png', 'image/jpeg', 'image/webp'].includes(file.type)) item.preview = URL.createObjectURL(file);
         items.push(item); upload(item);
       } notify();
     }
-    choose.title = __('対応形式: ') + policy.extensions.join(', ') + ' / ' + Math.floor(policy.max_bytes / 1024 / 1024) + ' MB';
+    choose.title = __('対応形式: ') + policy.extensions.join(', ') + ' / ' + __('1ファイルの上限: ') + policy.max_bytes.toLocaleString('ja-JP') + __(' バイト');
     choose.addEventListener('click', () => input.click()); input.addEventListener('change', () => { add([...input.files]); input.value = ''; });
     form.addEventListener('dragover', (event) => { if ([...event.dataTransfer.types].includes('Files')) { event.preventDefault(); form.classList.add('fmi-chat__composer--drop'); } });
     form.addEventListener('dragleave', () => form.classList.remove('fmi-chat__composer--drop'));
     form.addEventListener('drop', (event) => { form.classList.remove('fmi-chat__composer--drop'); if (event.dataTransfer.files.length) { event.preventDefault(); add([...event.dataTransfer.files]); } });
     form.addEventListener('paste', (event) => { const files = [...(event.clipboardData?.items || [])].filter((item) => item.kind === 'file').map((item) => item.getAsFile()).filter(Boolean); if (files.length) { event.preventDefault(); add(files); } });
-    async function blob(item) {
-      if (urls.has(item.id)) return urls.get(item.id);
-      const pending = (async () => { const reply = await fetch(options.endpoint + 'attachment_content', {method: 'POST', credentials: 'same-origin', headers: {'Content-Type': 'application/json', ...(options.nonce ? {'X-WP-Nonce': options.nonce} : {})}, body: JSON.stringify(identity({id: item.id, conversation_id: item.conversation_id}))}); if (!reply.ok) throw new Error(__('添付を取得できません。期限と権限を確認してください。')); return URL.createObjectURL(new Blob([await reply.arrayBuffer()], {type: item.mime || 'application/octet-stream'})); })();
-      cache(item.id, pending); try { return await pending; } catch (error) { urls.delete(item.id); throw error; }
+    async function blob(item, scope = identity(), version = revision) {
+      if (!current(scope, version) || scope.conversation_id !== item.conversation_id) throw stale();
+      if (!Number.isInteger(item.size) || item.size <= 0 || item.size > policy.max_bytes) throw new Error(__('添付ファイルのサイズを確認できません。'));
+      const key = JSON.stringify([scope, item.id]);
+      if (urls.has(key)) return urls.get(key);
+      const controller = new AbortController(); reads.add(controller);
+      const pending = (async () => { const reply = await fetch(options.endpoint + 'attachment_content', {method: 'POST', credentials: 'same-origin', redirect: 'error', signal: controller.signal, headers: {'Content-Type': 'application/json', ...(options.nonce ? {'X-WP-Nonce': options.nonce} : {})}, body: JSON.stringify({...scope, id: item.id, conversation_id: item.conversation_id})}); if (!reply.ok) {
+        const data = await reply.json().catch(() => ({}));
+        const error = new Error(reply.status === 401 ? __('Fourmix Intelligence に再度ログインして、添付の取得をお試しください。') : (data.message || __('添付を取得できません。期限と権限を確認してください。')));
+        error.status = reply.status;
+        if (reply.status === 401 && typeof data.login_url === 'string') {
+          try { const url = new URL(data.login_url, location.href); if (url.origin === location.origin && url.pathname.endsWith('/wp-admin/admin-post.php') && url.searchParams.get('action') === 'fourmix_intelligence_identity_start') error.loginUrl = url.href; } catch (_) {}
+        }
+        throw error;
+      } const body = await reply.arrayBuffer();
+      if (controller.signal.aborted || !current(scope, version)) throw stale();
+      if (body.byteLength !== item.size) throw new Error(__('添付ファイルの取得結果を確認できません。'));
+      return URL.createObjectURL(new Blob([body], {type: item.mime || 'application/octet-stream'})); })();
+      cache(key, pending); try { return await pending; } catch (error) { if (urls.get(key) === pending) urls.delete(key); throw error; } finally { reads.delete(controller); }
     }
     function drawMessage(target, files) {
-      if (!files?.length) return; const group = node('div', 'fmi-message-attachments'); target.append(group);
+      const scope = identity(), encoded = JSON.stringify(scope);
+      if (readScope !== null && readScope !== encoded) abortReads(); readScope = encoded;
+      if (!files?.length) return; const version = revision; const group = node('div', 'fmi-message-attachments'); target.append(group);
       files.forEach((item) => {
+        if (item.unavailable) { group.append(node('p', 'fmi-attachment', item.name || __('添付ファイルを確認できません。期限と権限を確認してください。'))); return; }
         const card = node('div', 'fmi-attachment'), open = button(item.name || __('添付ファイル')); card.append(open); group.append(card);
-        open.addEventListener('click', async () => { open.disabled = true; try { const link = document.createElement('a'); link.href = await blob(item); link.download = item.name || 'attachment'; link.click(); } catch (error) { open.textContent = error.message; } finally { open.disabled = false; } });
-        if (['image/png', 'image/jpeg', 'image/webp'].includes(item.mime)) { const image = node('img', 'fmi-message-image'); image.alt = item.name; image.width = 80; image.height = 80; imageItems.set(image, item); card.prepend(image); observer.observe(image); }
+        let failure = null;
+        open.addEventListener('click', async () => {
+          open.disabled = true; failure?.remove(); failure = null;
+          try { const url = await blob(item, scope, version); if (!current(scope, version)) return; const link = document.createElement('a'); link.href = url; link.download = item.name || 'attachment'; link.click(); }
+          catch (error) {
+            if (!current(scope, version) || error.name === 'AbortError') return;
+            failure = node('div', 'fmi-attachment-error'); const message = node('p', '', error.message); message.setAttribute('role', 'alert'); failure.append(message);
+            if (error.loginUrl) { const login = node('a', 'fmi-attachment-login', __('Fourmix Intelligence に再度ログイン')); login.href = error.loginUrl; login.rel = 'noreferrer noopener'; failure.append(login); }
+            card.append(failure);
+          } finally { open.disabled = false; }
+        });
+        if (['image/png', 'image/jpeg', 'image/webp'].includes(item.mime)) { const image = node('img', 'fmi-message-image'); image.alt = item.name; image.width = 80; image.height = 80; imageItems.set(image, {item, scope, version}); card.prepend(image); observer.observe(image); }
       });
     }
     draw();
     return {hasBlocking: () => items.some((item) => item.uploading || item.error || item.unknown), readyCount: () => items.filter((item) => item.id).length, setBusy(value) { choose.disabled = value; list.querySelectorAll('button').forEach((el) => { el.disabled = value; }); },
-      consume() { const values = items.filter((item) => item.id).map(metadata); items.forEach((item) => { if (item.id && item.preview) cache(item.id, Promise.resolve(item.preview)); }); items = []; status.textContent = ''; notify(); return values; }, drawMessage,
-      async reset() { for (const item of [...items]) await remove(item); if (items.length) throw new Error(__('未確認の添付を確認してから新しい相談を始めてください。')); prepareKey = requestId(); },
-      dispose() { disposed = true; observer.disconnect(); controllers.forEach((xhr) => xhr.abort()); items.forEach((item) => { if (item.preview) URL.revokeObjectURL(item.preview); }); urls.forEach((value) => value.then((url) => URL.revokeObjectURL(url)).catch(() => {})); urls.clear(); save(); }
+      consume() { const values = items.filter((item) => item.id).map(metadata); items.forEach((item) => { if (item.preview) URL.revokeObjectURL(item.preview); }); items = []; status.textContent = ''; notify(); return values; }, drawMessage,
+      async reset() { abortReads(); for (const item of [...items]) await remove(item); if (items.length) throw new Error(__('未確認の添付を確認してから新しい相談を始めてください。')); prepareKey = requestId(); },
+      dispose() { disposed = true; abortReads(); observer.disconnect(); controllers.forEach((xhr) => xhr.abort()); items.forEach((item) => { if (item.preview) URL.revokeObjectURL(item.preview); }); urls.forEach((value) => value.then((url) => URL.revokeObjectURL(url)).catch(() => {})); urls.clear(); save(); }
     };
   }
   window.FourmixIntelligenceAttachments = {mount};

@@ -9,13 +9,47 @@
   const surface = node('div', 'fmi-staff-surface'), host = page ? document.getElementById('fmi-chat') : node('div', 'fmi-staff-chat-host');
   const context = node('div', 'fmi-staff-context'), label = node('label', ''), include = document.createElement('input');
   include.type = 'checkbox'; include.id = 'fmi-include-context';
-  label.append(include, document.createTextNode(' ' + __('現在の画面情報を送信する')));
-  context.append(label, node('p', 'fmi-staff-context-title', config.context.title || config.context.screen), node('p', 'description', __('画面名と、権限のある投稿のID・種類・タイトル・状態だけを送信します。本文や一覧のデータは含めません。')));
+  label.append(include, document.createTextNode(' ' + __('画面情報を送信')));
+  const contextDetails = node('details', 'fmi-staff-context-details');
+  contextDetails.append(node('summary', '', __('送信内容')), node('p', 'fmi-staff-context-title', config.context.title || config.context.screen), node('p', 'description', __('画面名と、権限のある投稿のID・種類・タイトル・状態だけを送信します。本文や一覧のデータは含めません。')));
+  context.append(label, contextDetails);
   surface.append(context, host); (page || dockBody).append(surface);
   const moved = node('p', 'fmi-chat-placeholder', __('右下のウィンドウで相談しています。'));
   const returnButton = node('button', 'button', __('ページに戻す')); returnButton.type = 'button'; moved.append(document.createTextNode(' '), returnButton); if (page) { page.append(moved); moved.hidden = true; }
   const storageKey = 'fourmix_intelligence_dock_' + config.uiScope;
   let chat = null, initialization = null, revision = 0, opened = false;
+  const dockHeader = panel.querySelector('.fmi-dock-header');
+  const pageHeader = document.getElementById('fmi-page-header');
+  const contextMenu = node('details', 'fmi-dock-context-menu');
+  contextMenu.append(node('summary', '', __('画面情報を送信')));
+  const contextTrigger = contextMenu.querySelector('summary');
+  contextMenu.addEventListener('keydown', (event) => {
+    if (event.key !== 'Escape' || !contextMenu.open) return;
+    event.preventDefault(); event.stopPropagation(); contextMenu.open = false; contextTrigger.focus();
+  });
+  document.addEventListener('pointerdown', (event) => {
+    if (contextMenu.open && !contextMenu.contains(event.target)) contextMenu.open = false;
+  });
+  const contextBenefit = node('p', 'fmi-staff-context-benefit', __('現在の画面に合った操作手順や設定方法を、AIがより具体的に案内できます。'));
+  context.prepend(contextBenefit);
+  dockHeader.insertBefore(contextMenu, document.getElementById('fmi-dock-close'));
+  let toolbar = null;
+  function placeControls() {
+    if (opened) {
+      dockHeader.insertBefore(contextMenu, document.getElementById('fmi-dock-close'));
+      contextMenu.append(context);
+      if (toolbar) dockHeader.insertBefore(toolbar, contextMenu);
+    } else if (pageHeader) {
+      pageHeader.append(contextMenu);
+      contextMenu.append(context);
+      if (toolbar) pageHeader.insertBefore(toolbar, contextMenu);
+      contextMenu.open = false;
+    } else {
+      surface.prepend(context);
+      if (toolbar) host.prepend(toolbar);
+      contextMenu.open = false;
+    }
+  }
   const scriptPromises = new Map();
   async function loadChat() {
     if (window.FourmixIntelligenceChat) return;
@@ -30,9 +64,22 @@
     await load('fourmix-intelligence-chat');
   }
   function unavailable(message, loginUrl = null, denied = false) {
+    page?.classList.remove('fmi-chat-ready');
+    toolbar?.remove(); toolbar = null; contextMenu.open = false;
     chat?.dispose(); chat = null; context.hidden = true; host.classList.remove('fmi-chat');
-    const prompt = node('div', 'fmi-staff-setup'); prompt.append(node('p', '', message || __('相談を始めるには、社内向けAIの設定を確認してください。')));
-    const link = node('a', 'button button-primary', __('社内向けAIの設定を開く')); link.href = loginUrl || config.settingsUrl; if (loginUrl) link.textContent = __('Fourmix Intelligence にログイン'); if (!denied) prompt.append(link); host.replaceChildren(prompt);
+    const prompt = node('div', 'fmi-staff-setup');
+    if (!config.loginConfigurationReady) {
+      prompt.append(node('p', '', config.setupMessage));
+      if (config.setupSettingsUrl) {
+        const link = node('a', 'button button-primary', config.setupSettingsLabel); link.href = config.setupSettingsUrl; prompt.append(link);
+      } else {
+        prompt.append(node('p', '', config.setupAdminMessage));
+      }
+    } else {
+      prompt.append(node('p', '', message || __('相談を始めるには、社内向けAIの設定を確認してください。')));
+      const link = node('a', 'button button-primary', __('社内向けAIの設定を開く')); link.href = loginUrl || config.settingsUrl; if (loginUrl) link.textContent = __('Fourmix Intelligence にログイン'); if (!denied) prompt.append(link);
+    }
+    host.replaceChildren(prompt);
   }
   async function request(action, body, signal) {
     const reply = await fetch(config.endpoint + action, {method: 'POST', credentials: 'same-origin', signal, headers: {'Content-Type': 'application/json', 'X-WP-Nonce': config.nonce}, body: JSON.stringify(body || {})});
@@ -53,8 +100,9 @@
     return data;
   }
   function initialize(force = false) {
+    if (!config.loginConfigurationReady) { unavailable(); return Promise.resolve(); }
     if (initialization && !force) return initialization;
-    const version = ++revision; chat?.dispose(); chat = null;
+    const version = ++revision; chat?.dispose(); chat = null; toolbar?.remove(); toolbar = null;
     host.classList.remove('fmi-chat'); host.replaceChildren(node('p', 'fmi-chat-placeholder', __('相談を読み込んでいます…'))); context.hidden = true;
     initialization = (async () => {
       try {
@@ -68,29 +116,36 @@
         if (catalog.context) context.querySelector('.fmi-staff-context-title').textContent = catalog.context.title;
         chat = window.FourmixIntelligenceChat.mount(host, {
           ...session, label: agent.label, tools: true, preserveDraft: true,
+          artifacts: {endpoint: config.endpoint, nonce: config.nonce, identity: () => ({agent: agent.name})},
           attachments: {policy: agent.attachments, endpoint: config.endpoint, nonce: config.nonce, identity: () => ({agent: agent.name})},
           stream: async (body, signal, receive) => {
             try { return await window.FourmixIntelligenceChat.stream(config.endpoint + 'chat_stream', {method: 'POST', credentials: 'same-origin', headers: {'Content-Type': 'application/json', 'X-WP-Nonce': config.nonce}, body: JSON.stringify({agent: agent.name, ...body})}, signal, receive); }
             catch (error) { if (error.status === 401 || error.status === 403 || ['rest_forbidden', 'rest_cookie_invalid_nonce'].includes(error.code)) { ++revision; unavailable(error.message, error.loginUrl, error.status === 403); } throw error; }
           },
           request: (action, body, signal) => request(action, {agent: agent.name, ...body}, signal),
+          conversations: (page = 1) => request('conversations', {agent: agent.name, page}),
+          history: (conversation_id, before_id) => request('history', {agent: agent.name, conversation_id, before_id}),
+          cancel: (body) => request('cancel_run', {agent: agent.name, ...body}),
           newConversation: () => request('new_conversation', {agent: agent.name}),
           context: () => ({post_id: catalog.context ? config.context.post_id : 0, include_context: include.checked, screen: config.context.screen, screen_title: config.context.title}),
           contextLabel: (body) => body.include_context ? __('現在の画面情報を送信（本文は含みません）') : __('画面情報は送信していません')
         });
+        toolbar = host.querySelector('.fmi-chat__toolbar');
+        page?.classList.add('fmi-chat-ready');
+        placeControls();
       } catch (error) { if (version === revision) unavailable(error.message, error.loginUrl, error.status === 403); }
     })();
     return initialization;
   }
   function open(focus = false) {
     opened = true; panel.hidden = false; toggle.setAttribute('aria-expanded', 'true'); toggle.setAttribute('aria-label', __('Fourmix Intelligenceの相談を閉じる'));
-    dockBody.append(surface); if (page) moved.hidden = false;
+    dockBody.append(surface); placeControls(); if (page) moved.hidden = false;
     try { sessionStorage.setItem(storageKey, 'open'); } catch (_) {}
     initialize().then(() => { if (opened && focus) (chat?.input || panel.querySelector('a'))?.focus(); });
   }
   function close() {
     const restoreFocus = panel.contains(document.activeElement); opened = false; panel.hidden = true; toggle.setAttribute('aria-expanded', 'false'); toggle.setAttribute('aria-label', __('Fourmix Intelligenceの相談を開く'));
-    if (page) { page.prepend(surface); moved.hidden = true; }
+    if (page) { page.prepend(surface); moved.hidden = true; } placeControls();
     try { sessionStorage.setItem(storageKey, 'closed'); } catch (_) {}
     if (restoreFocus) toggle.focus();
   }
@@ -105,5 +160,5 @@
   }
   window.visualViewport?.addEventListener('resize', viewport); window.visualViewport?.addEventListener('scroll', viewport); window.addEventListener('resize', viewport); viewport();
   let restore = false; try { restore = sessionStorage.getItem(storageKey) === 'open'; } catch (_) {}
-  if (restore) open(); else if (page) initialize();
+  if (!config.loginConfigurationReady) unavailable(); else if (restore) open(); else if (page) initialize();
 })();

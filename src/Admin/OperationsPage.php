@@ -22,7 +22,7 @@ final class OperationsPage {
 		if ( 'fourmix-intelligence_page_fourmix-intelligence-native-operations' !== $hook ) {
 			return;
 		}
-		wp_enqueue_script( 'fourmix-intelligence-admin', FOURMIX_INTELLIGENCE_URL . 'assets/admin.js', array( 'wp-i18n' ), FOURMIX_INTELLIGENCE_VERSION, true );
+		wp_enqueue_script( 'fourmix-intelligence-admin', FOURMIX_INTELLIGENCE_URL . 'assets/admin.js', array( 'wp-i18n' ), \FourmixIntelligence\WordPress\Support\ChatAssets::version( 'assets/admin.js' ), true );
 		wp_set_script_translations( 'fourmix-intelligence-admin', 'fourmix-intelligence' );
 		wp_localize_script(
 			'fourmix-intelligence-admin',
@@ -39,8 +39,8 @@ final class OperationsPage {
 		}
 		?>
 		<div class="wrap" id="fmi-operations">
-			<h1 class="fmi-brand-heading"><img src="<?php echo esc_url( FOURMIX_INTELLIGENCE_URL . 'assets/brand/fourmix-intelligence-icon.png' ); ?>" alt="" width="36" height="36"><?php esc_html_e( 'Fourmix Intelligence 運営支援', 'fourmix-intelligence' ); ?></h1>
-			<p class="fmi-introduction"><?php esc_html_e( '業務についてAIに相談できます。操作が必要な場合は、内容を確認してから実行します。', 'fourmix-intelligence' ); ?> <a href="<?php echo esc_url( admin_url( 'admin.php?page=fourmix-intelligence-personal-settings' ) ); ?>"><?php esc_html_e( '社内向けAIの設定', 'fourmix-intelligence' ); ?></a></p>
+			<header id="fmi-page-header" class="fmi-dock-header"><img src="<?php echo esc_url( FOURMIX_INTELLIGENCE_URL . 'assets/brand/fourmix-intelligence-icon.png' ); ?>" alt="" width="28" height="28"><h1><?php esc_html_e( 'Fourmix Intelligence', 'fourmix-intelligence' ); ?></h1></header>
+			<section class="fmi-chat-onboarding"><h2><?php esc_html_e( 'Fourmix Intelligence 運営支援', 'fourmix-intelligence' ); ?></h2><p><?php if ( \FourmixIntelligence\WordPress\Support\NativeIdentity::login_configuration_ready() ) : ?><?php esc_html_e( '業務についてAIに相談できます。操作が必要な場合は、内容を確認してから実行します。', 'fourmix-intelligence' ); ?><?php else : ?><?php esc_html_e( 'このサイトは未接続です。管理者が連携設定を済ませ、ワークスペースからこのサイトを登録してください。', 'fourmix-intelligence' ); ?><?php endif; ?> <a href="<?php echo esc_url( admin_url( 'admin.php?page=fourmix-intelligence-personal-settings' ) ); ?>"><?php esc_html_e( '社内向けAIの設定', 'fourmix-intelligence' ); ?></a></p></section>
 			<div id="fmi-chat-page"><div id="fmi-chat"></div></div>
 		</div>
 		<?php
@@ -54,7 +54,7 @@ final class OperationsPage {
 			<h1 class="fmi-brand-heading"><img src="<?php echo esc_url( FOURMIX_INTELLIGENCE_URL . 'assets/brand/fourmix-intelligence-icon.png' ); ?>" alt="" width="36" height="36"><?php esc_html_e( 'Fourmix Intelligence WordPressの業務操作', 'fourmix-intelligence' ); ?></h1>
 			<p><a class="button" href="<?php echo esc_url( admin_url( 'admin.php?page=fourmix-intelligence-operations' ) ); ?>"><?php esc_html_e( '選択した Studio AI に相談', 'fourmix-intelligence' ); ?></a></p>
 			<section class="fmi-manual-operations"><p><?php esc_html_e( '本人に許可された操作を直接確認できます。変更する場合はプレビュー後に承認してください。', 'fourmix-intelligence' ); ?></p><p id="fmi-modules"></p>
-				<div id="fmi-result" role="status" aria-live="polite"></div><form id="fmi-operation"><p><label for="fmi-action"><?php esc_html_e( '操作', 'fourmix-intelligence' ); ?></label> <select id="fmi-action"></select></p><div id="fmi-fields"></div><button class="button" type="submit" disabled><?php esc_html_e( '内容をプレビュー', 'fourmix-intelligence' ); ?></button></form>
+				<div id="fmi-result" role="status" aria-live="polite"></div><p id="fmi-auth-recovery" hidden><a class="button" href="<?php echo esc_url( admin_url( 'admin.php?page=fourmix-intelligence-personal-settings' ) ); ?>"><?php esc_html_e( 'ログイン・社内向けAIの設定を開く', 'fourmix-intelligence' ); ?></a></p><form id="fmi-operation"><p><label for="fmi-action"><?php esc_html_e( '操作', 'fourmix-intelligence' ); ?></label> <select id="fmi-action"></select></p><div id="fmi-fields"></div><button class="button" type="submit" disabled><?php esc_html_e( '内容をプレビュー', 'fourmix-intelligence' ); ?></button></form>
 				<pre id="fmi-preview"></pre><button class="button button-primary" id="fmi-confirm" type="button" hidden><?php esc_html_e( '内容を確認して実行', 'fourmix-intelligence' ); ?></button>
 			</section>
 		</div>

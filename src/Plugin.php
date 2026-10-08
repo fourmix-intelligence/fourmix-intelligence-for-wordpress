@@ -16,6 +16,7 @@ final class Plugin {
 		return self::$instance ??= new self(); }
 
 	public function boot(): void {
+		Installer::maybe_upgrade();
 		\FourmixIntelligence\WordPress\Support\ChatSession::register();
 		\FourmixIntelligence\WordPress\Support\NativeIdentity::register();
 		add_filter( 'cron_schedules', array( $this, 'cron_schedules' ) );

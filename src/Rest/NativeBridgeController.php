@@ -396,10 +396,21 @@ final class NativeBridgeController {
 		}
 		$payload = $request->get_json_params();
 		$args    = is_array( $payload['arguments'] ?? null ) ? $payload['arguments'] : array();
+		$key     = (string) ( $args['idempotency_key'] ?? '' );
+		unset( $args['idempotency_key'] );
 		try {
-			$key = (string) ( $args['idempotency_key'] ?? '' );
-			unset( $args['idempotency_key'] );
 			$this->validate_operation( $name, $args );
+		} catch ( \Throwable $error ) {
+			// 実行前の検証拒否は、通信断や実行後の結果不明と区別する。
+			return new WP_REST_Response(
+				array(
+					'state' => 'rejected',
+					'error' => __( 'この操作は権限または入力条件を満たしていません。設定と内容を確認してください。', 'fourmix-intelligence' ),
+				),
+				422
+			);
+		}
+		try {
 			if ( $definitions[ $name ][1] ) {
 				return new WP_REST_Response(
 					array(
@@ -428,6 +439,9 @@ final class NativeBridgeController {
 			throw new \RuntimeException( __( 'この操作は許可されていません。', 'fourmix-intelligence' ) );
 		}
 		$this->validate_arguments( $definition[4], $a );
+		if ( 'content.delete' === $name ) {
+			$this->require_recoverable_trash();
+		}
 		if ( str_starts_with( $name, 'content.' ) ) {
 			$post = isset( $a['id'] ) ? get_post( $a['id'] ) : null;
 			if ( isset( $a['id'] ) && ( ! $post || ! in_array( $post->post_type, $this->allowed_post_types(), true ) || ! current_user_can( 'content.delete' === $name ? 'delete_post' : ( 'content.get' === $name ? 'read_post' : 'edit_post' ), $post->ID ) ) ) {
@@ -483,6 +497,12 @@ final class NativeBridgeController {
 			'coupons'   => 'edit_shop_coupons',
 		);
 		return isset( $cap[ $group ] ) && current_user_can( $cap[ $group ] ) && ( 'customers' !== $group || current_user_can( 'manage_woocommerce' ) );
+	}
+
+	private function require_recoverable_trash(): void {
+		if ( ! defined( 'EMPTY_TRASH_DAYS' ) || (int) EMPTY_TRASH_DAYS <= 0 ) {
+			throw new \RuntimeException( __( 'このサイトではゴミ箱へ移動できません。完全削除は実行しません。WordPressのゴミ箱設定を管理者に確認してください。', 'fourmix-intelligence' ) );
+		}
 	}
 
 	public function perform( string $name, array $a ): mixed {
@@ -625,6 +645,7 @@ final class NativeBridgeController {
 					'id'         => $o->get_id(),
 					'status'     => $o->get_status(),
 					'total'      => $o->get_total(),
+					'currency'   => $o->get_currency(),
 					'created_at' => $o->get_date_created()?->date( DATE_ATOM ),
 				),
 				array_values(
@@ -645,10 +666,11 @@ final class NativeBridgeController {
 			if ( ! $o ) {
 				throw new \RuntimeException( __( '注文が見つかりません。', 'fourmix-intelligence' ) );
 			} return array(
-				'id'     => $o->get_id(),
-				'status' => $o->get_status(),
-				'total'  => $o->get_total(),
-				'items'  => array_map(
+				'id'       => $o->get_id(),
+				'status'   => $o->get_status(),
+				'total'    => $o->get_total(),
+				'currency' => $o->get_currency(),
+				'items'    => array_map(
 					fn( $i ) => array(
 						'name'     => $i->get_name(),
 						'quantity' => $i->get_quantity(),

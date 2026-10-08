@@ -1,7 +1,91 @@
 .fmi-brand-heading{display:flex;align-items:center;gap:10px}.fmi-brand-heading img,.fmi-dock-header img,#fmi-dock-toggle img{object-fit:contain;flex:none;filter:none;opacity:1}.fmi-personal-settings,#fmi-native-operations{max-width:1060px;margin-bottom:80px}.fmi-personal-settings>p{max-width:64em;line-height:1.8}#fmi-personal-status{min-height:24px;overflow-wrap:anywhere}#adminmenu #toplevel_page_fourmix-intelligence-operations .wp-menu-image img{width:22px;height:22px;padding:6px 0 0;object-fit:contain;filter:none;opacity:1}
 #fmi-dock{--fmi-keyboard-inset:0px;--fmi-dock-bg:#fff;--fmi-dock-text:#1d2327;--fmi-dock-line:#dcdcde;--fmi-dock-link:#2271b1}#fmi-dock [hidden],#fmi-chat-page [hidden],#fmi-native-operations [hidden]{display:none!important}#fmi-dock-toggle{position:fixed;z-index:9990;right:18px;bottom:calc(18px + var(--fmi-keyboard-inset));display:grid;place-items:center;width:56px;height:56px;border:1px solid var(--fmi-dock-line);border-radius:50%;background:var(--fmi-dock-bg);box-shadow:0 4px 18px #0003;cursor:pointer;padding:8px}#fmi-dock-toggle:focus-visible,.fmi-dock-header button:focus-visible,.fmi-dock-footer a:focus-visible{outline:2px solid var(--fmi-dock-link);outline-offset:3px}
 .fmi-dock-panel{box-sizing:border-box;position:fixed;z-index:9990;right:18px;bottom:calc(86px + var(--fmi-keyboard-inset));width:min(460px,calc(100vw - 36px));height:min(720px,calc(var(--fmi-viewport-height,100dvh) - 138px));display:flex;flex-direction:column;border:1px solid var(--fmi-dock-line);border-radius:10px;background:var(--fmi-dock-bg);color:var(--fmi-dock-text);box-shadow:0 8px 36px #0003;overflow:hidden;color-scheme:light}.fmi-dock-panel *{box-sizing:border-box}.fmi-dock-header{display:flex;align-items:center;gap:8px;padding:10px 12px;border-bottom:1px solid var(--fmi-dock-line);flex:none}.fmi-dock-header span{flex:1;font-weight:600;font-size:14px}.fmi-dock-header button{border:0;background:transparent;color:inherit;font-size:22px;line-height:1;width:36px;height:36px;cursor:pointer;border-radius:4px}.fmi-dock-footer{display:flex;gap:18px;padding:9px 14px;border-top:1px solid var(--fmi-dock-line);flex:none;font-size:12px;line-height:1.7}.fmi-dock-footer a{color:var(--fmi-dock-link)}#fmi-dock-body{display:flex;flex:1;min-height:0}.fmi-staff-surface{width:100%;min-width:0}.fmi-staff-context{padding:12px 16px;border:1px solid #dcdcde;border-radius:6px 6px 0 0;background:#fff;color:#1d2327}.fmi-staff-context label{font-size:13px;font-weight:600;line-height:1.7}.fmi-staff-context-title{font-size:12px;margin:5px 0 0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.fmi-staff-context .description{margin:4px 0 0;font-size:12px;line-height:1.6}.fmi-staff-setup{padding:32px 20px;background:#fff;border:1px solid #dcdcde;border-radius:6px;color:#1d2327}.fmi-staff-setup p{margin:0 0 18px;line-height:1.8}.fmi-staff-chat-host{min-height:0}#fmi-chat-page{max-width:1060px;margin-bottom:40px}
-.fmi-dock-panel .fmi-staff-surface{display:flex;flex-direction:column;min-height:0}.fmi-dock-panel .fmi-staff-context{padding:10px 14px;border:0;border-bottom:1px solid var(--fmi-dock-line);border-radius:0;flex:none;background:var(--fmi-dock-bg);color:inherit}.fmi-dock-panel .fmi-staff-context .description{font-size:11px;color:inherit}.fmi-dock-panel .fmi-chat{display:flex;flex-direction:column;flex:1;min-height:0;border:0;border-radius:0}.fmi-dock-panel .fmi-chat__toolbar{padding:8px 12px;flex:none}.fmi-dock-panel .fmi-chat__label{min-width:100px;font-size:13px}.fmi-dock-panel .fmi-chat__messages{height:auto;max-height:none;min-height:0;flex:1;padding:16px 12px}.fmi-dock-panel .fmi-chat__message{max-width:96%;padding:12px;margin-bottom:16px}.fmi-dock-panel .fmi-chat__status{min-height:0;padding:4px 12px 8px;flex:none;font-size:12px}.fmi-dock-panel .fmi-chat__status:empty{padding:0}.fmi-dock-panel .fmi-chat__composer{padding:10px 12px;flex:none}.fmi-dock-panel .fmi-chat textarea.fmi-chat__input{min-height:72px;max-height:120px;margin:4px 0 8px}.fmi-dock-panel .fmi-chat__recovery{padding:0 12px 8px;flex:none}.fmi-dock-panel .fmi-chat__empty{margin:24px auto}.fmi-dock-panel .fmi-chat__controls .fmi-chat__hint{font-size:11px}.fmi-dock-panel .fmi-staff-setup{border:0;background:var(--fmi-dock-bg);color:inherit}
-@media(max-width:600px){#fmi-dock-toggle{right:12px;bottom:calc(12px + var(--fmi-keyboard-inset));width:52px;height:52px}.fmi-dock-panel{right:12px;bottom:calc(76px + var(--fmi-keyboard-inset));width:calc(100vw - 24px);height:min(720px,calc(var(--fmi-viewport-height,100dvh) - 134px))}.fmi-dock-panel .fmi-chat textarea.fmi-chat__input{font-size:16px}.fmi-dock-panel .fmi-chat__controls .fmi-chat__hint{flex-basis:100%}.fmi-personal-settings .button{white-space:normal}.fmi-brand-heading{align-items:flex-start}}
+.fmi-dock-panel .fmi-staff-surface{display:flex;flex-direction:column;min-height:0}.fmi-dock-panel .fmi-staff-context{padding:10px 14px;border:0;border-bottom:1px solid var(--fmi-dock-line);border-radius:0;flex:none;background:var(--fmi-dock-bg);color:inherit}.fmi-dock-panel .fmi-staff-context .description{font-size:11px;color:inherit}:is(.fmi-dock-panel,#fmi-chat-page) .fmi-chat{display:flex;flex-direction:column;flex:1;min-height:0;border:0;border-radius:0}:is(.fmi-dock-panel,#fmi-chat-page) .fmi-chat__toolbar{padding:8px 12px;flex:none}:is(.fmi-dock-panel,#fmi-chat-page) .fmi-chat__label{min-width:100px;font-size:13px}:is(.fmi-dock-panel,#fmi-chat-page) .fmi-chat__messages{height:auto;max-height:none;min-height:0;flex:1;padding:16px 12px}:is(.fmi-dock-panel,#fmi-chat-page) .fmi-chat__message{max-width:96%;padding:12px;margin-bottom:16px}:is(.fmi-dock-panel,#fmi-chat-page) .fmi-chat__status{min-height:0;padding:4px 12px 8px;flex:none;font-size:12px}:is(.fmi-dock-panel,#fmi-chat-page) .fmi-chat__status:empty{padding:0}:is(.fmi-dock-panel,#fmi-chat-page) .fmi-chat__composer{padding:10px 12px;flex:none}:is(.fmi-dock-panel,#fmi-chat-page) .fmi-chat textarea.fmi-chat__input{min-height:72px;max-height:120px;margin:4px 0 8px}:is(.fmi-dock-panel,#fmi-chat-page) .fmi-chat__recovery{padding:0 12px 8px;flex:none}:is(.fmi-dock-panel,#fmi-chat-page) .fmi-chat__empty{margin:24px auto}:is(.fmi-dock-panel,#fmi-chat-page) .fmi-chat__controls .fmi-chat__hint{font-size:11px}.fmi-dock-panel .fmi-staff-setup{border:0;background:var(--fmi-dock-bg);color:inherit}
+@media(max-width:600px){#fmi-dock-toggle{right:12px;bottom:calc(12px + var(--fmi-keyboard-inset));width:52px;height:52px}.fmi-dock-panel{right:12px;bottom:calc(76px + var(--fmi-keyboard-inset));width:calc(100vw - 24px);height:min(720px,calc(var(--fmi-viewport-height,100dvh) - 134px))}:is(.fmi-dock-panel,#fmi-chat-page) .fmi-chat textarea.fmi-chat__input{font-size:16px}:is(.fmi-dock-panel,#fmi-chat-page) .fmi-chat__controls .fmi-chat__hint{flex-basis:100%}.fmi-personal-settings .button{white-space:normal}.fmi-brand-heading{align-items:flex-start}}
 @media(prefers-color-scheme:dark){#fmi-dock{--fmi-dock-bg:#1d2327;--fmi-dock-text:#f0f0f1;--fmi-dock-line:#50575e;--fmi-dock-link:#72aee6}.fmi-dock-panel{color-scheme:dark}}
 .fmi-dock-compact .fmi-dock-panel{bottom:calc(10px + var(--fmi-keyboard-inset));height:calc(var(--fmi-viewport-height,100dvh) - 60px)}.fmi-dock-compact:has(.fmi-dock-panel:not([hidden])) #fmi-dock-toggle{display:none}.fmi-dock-compact .fmi-dock-header{padding:4px 12px}.fmi-dock-compact .fmi-dock-footer,.fmi-dock-compact .fmi-staff-context .description,.fmi-dock-compact .fmi-staff-context-title,.fmi-dock-compact .fmi-chat__controls .fmi-chat__hint{display:none}.fmi-dock-compact .fmi-staff-context{padding:6px 12px}.fmi-dock-compact .fmi-chat textarea.fmi-chat__input{height:56px;min-height:56px;max-height:72px;resize:none}.fmi-dock-compact .fmi-chat__toolbar{padding:4px 12px}.fmi-dock-compact .fmi-chat__composer{padding:6px 12px}.fmi-dock-compact .fmi-chat__input-label{font-size:0}.fmi-dock-compact .fmi-chat__status{max-height:48px;overflow:auto}
+
+/* 相談本文に高さを優先し、画面情報の詳細は必要なときだけ開きます。 */
+.fmi-staff-context{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;padding:8px 12px}
+.fmi-staff-context>label{flex:none;display:flex;align-items:center;gap:6px;min-height:28px}
+.fmi-staff-context>label input{margin:0}
+.fmi-staff-context-details{min-width:0;max-width:65%;font-size:12px;line-height:1.6}
+.fmi-staff-context-details summary{cursor:pointer;min-height:28px;display:list-item;list-style-position:inside;text-align:right;color:var(--fmi-dock-link,#2271b1)}
+.fmi-staff-context-details[open]{max-width:65%;max-height:120px;overflow:auto}
+.fmi-dock-panel{bottom:calc(18px + var(--fmi-keyboard-inset));width:min(520px,calc(100vw - 36px));height:min(800px,calc(var(--fmi-viewport-height,100dvh) - 70px))}
+#fmi-dock:has(.fmi-dock-panel:not([hidden])) #fmi-dock-toggle{display:none}
+.fmi-dock-panel .fmi-staff-context{padding:6px 12px}
+:is(.fmi-dock-panel,#fmi-chat-page) .fmi-chat__composer{padding:8px 12px}
+:is(.fmi-dock-panel,#fmi-chat-page) .fmi-chat__input-label{font-size:0}
+:is(.fmi-dock-panel,#fmi-chat-page) .fmi-chat textarea.fmi-chat__input{height:56px;min-height:56px;max-height:100px;font-size:14px;font-weight:400}
+:is(.fmi-dock-panel,#fmi-chat-page) .fmi-chat__controls .fmi-chat__hint{display:none}
+:is(.fmi-dock-panel,#fmi-chat-page) .fmi-chat__toolbar{padding:6px 12px}
+@media(max-width:600px){.fmi-dock-panel{right:8px;bottom:calc(8px + var(--fmi-keyboard-inset));width:calc(100vw - 16px);height:calc(var(--fmi-viewport-height,100dvh) - 62px)}:is(.fmi-dock-panel,#fmi-chat-page) .fmi-chat textarea.fmi-chat__input{font-size:16px}}
+:is(.fmi-dock-panel,#fmi-chat-page) .fmi-chat__composer{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:4px 8px;align-items:end}
+:is(.fmi-dock-panel,#fmi-chat-page) .fmi-chat__input-label{grid-column:1 / -1;min-width:0}
+:is(.fmi-dock-panel,#fmi-chat-page) .fmi-attachments{margin:0;min-width:0}
+:is(.fmi-dock-panel,#fmi-chat-page) .fmi-chat__controls{grid-column:2;justify-content:flex-end}
+@media(max-width:600px){.fmi-dock-panel{left:8px;right:8px;width:auto;max-width:none}}
+.fmi-dock-compact .fmi-staff-context-details[open] .description,.fmi-dock-compact .fmi-staff-context-details[open] .fmi-staff-context-title{display:block}
+/* 浮窓の操作はヘッダーと一行入力にまとめます。 */
+.fmi-dock-header{position:relative;gap:8px;padding:8px 12px}
+.fmi-dock-header:has(.fmi-chat__toolbar) > #fmi-dock-title{display:none}
+.fmi-dock-header .fmi-chat__toolbar{display:flex;flex:1;min-width:0;padding:0;border:0;background:transparent;flex-wrap:nowrap;gap:8px}
+.fmi-dock-header .fmi-chat__label{display:block;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px}
+.fmi-dock-header .fmi-chat__button{flex:none;font:inherit;font-size:12px;min-height:32px;width:auto;padding:4px 8px;border:1px solid var(--fmi-dock-line);background:transparent;color:inherit}
+.fmi-dock-header .fmi-chat__button:disabled{opacity:.55;cursor:default}
+.fmi-dock-context-menu{flex:none;font-size:12px}
+.fmi-dock-context-menu > summary{cursor:pointer;min-height:32px;display:flex;align-items:center;color:var(--fmi-dock-link)}
+.fmi-dock-context-menu:has(.fmi-staff-context[hidden]){display:none}
+.fmi-dock-context-menu > .fmi-staff-context{position:absolute;z-index:2;top:100%;left:8px;right:8px;display:flex;flex-direction:column;gap:6px;border:1px solid var(--fmi-dock-line);border-radius:6px;padding:12px;background:var(--fmi-dock-bg);box-shadow:0 6px 20px #0003;max-height:180px;overflow:auto}
+.fmi-dock-context-menu .fmi-staff-context-details,.fmi-dock-context-menu .fmi-staff-context-details[open]{width:100%;max-width:100%;max-height:none}
+.fmi-dock-context-menu .fmi-staff-context-details summary{text-align:left}
+:is(.fmi-dock-panel,#fmi-chat-page) .fmi-chat__composer{grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:8px}
+:is(.fmi-dock-panel,#fmi-chat-page) .fmi-chat__input-label{grid-column:2;grid-row:2}
+:is(.fmi-dock-panel,#fmi-chat-page) .fmi-chat textarea.fmi-chat__input{margin:0;height:44px;min-height:44px;max-height:100px;padding:8px 10px}
+:is(.fmi-dock-panel,#fmi-chat-page) .fmi-attachments{display:contents}
+:is(.fmi-dock-panel,#fmi-chat-page) .fmi-attachments > button{grid-column:1;grid-row:2;font-size:0;width:36px;min-height:36px;padding:0}
+:is(.fmi-dock-panel,#fmi-chat-page) .fmi-attachments > button::before{content:'＋';font-size:22px}
+:is(.fmi-dock-panel,#fmi-chat-page) .fmi-attachments-list{grid-column:1 / -1;grid-row:1;max-height:100px}
+:is(.fmi-dock-panel,#fmi-chat-page) .fmi-attachments-status{grid-column:1 / -1;grid-row:3;max-height:40px;overflow:auto;margin:0}
+:is(.fmi-dock-panel,#fmi-chat-page) .fmi-chat__controls{grid-column:3;grid-row:2;flex-wrap:nowrap}
+.fmi-dock-header button:focus-visible,.fmi-dock-context-menu summary:focus-visible{outline:2px solid var(--fmi-dock-link);outline-offset:2px}
+.fmi-staff-context-benefit{margin:0;font-size:12px;line-height:1.7;overflow-wrap:anywhere}
+.fmi-staff-context > .fmi-staff-context-benefit{flex-basis:100%}
+.fmi-staff-context:has(> .fmi-staff-context-benefit){flex-wrap:wrap}
+.fmi-staff-context > .fmi-staff-context-benefit{display:none}
+.fmi-dock-context-menu .fmi-staff-context > .fmi-staff-context-benefit{display:block}
+/* ページ版はWordPressの作業領域全体を会話に使用します。 */
+body.toplevel_page_fourmix-intelligence-operations #fmi-operations{position:fixed;inset:var(--wp-admin--admin-bar--height,32px) 0 0 160px;display:flex;flex-direction:column;min-width:0;min-height:0;max-width:none;margin:0;background:var(--fmi-dock-bg,#fff);overflow:hidden}
+body.toplevel_page_fourmix-intelligence-operations.folded #fmi-operations{left:36px}
+body.toplevel_page_fourmix-intelligence-operations #wpfooter{display:none}
+#fmi-page-header{flex:none;min-height:52px;background:var(--fmi-chat-bg,#fff);color:var(--fmi-chat-text,#1d2327)}
+#fmi-page-header h1{margin:0;padding:0;font-size:14px;line-height:1.5;font-weight:600}
+#fmi-chat-page{display:flex;flex:1;min-height:0;max-width:none;margin:0}
+#fmi-chat-page .fmi-staff-surface,#fmi-chat-page .fmi-chat{display:flex;flex:1;flex-direction:column;min-width:0;min-height:0}
+#fmi-chat-page .fmi-chat{border:0;border-radius:0}
+#fmi-chat-page .fmi-chat__messages{height:auto;max-height:none;min-height:0;flex:1;padding:24px max(16px,calc((100% - 880px)/2))}
+#fmi-chat-page .fmi-chat__composer{flex:none;width:min(880px,calc(100% - 32px));margin:0 auto 16px;border:1px solid var(--fmi-chat-line);border-radius:12px}
+#fmi-chat-page .fmi-chat__status{flex:none;min-height:0;padding:4px 16px 8px;max-height:60px;overflow:auto}
+#fmi-chat-page .fmi-chat__status:empty{display:none}
+#fmi-chat-page .fmi-chat__recovery{flex:none}
+#fmi-page-header .fmi-dock-context-menu > .fmi-staff-context{background:var(--fmi-chat-bg,#fff);color:var(--fmi-chat-text,#1d2327)}
+@media(max-width:960px){body.toplevel_page_fourmix-intelligence-operations #fmi-operations{left:36px}}
+@media(max-width:782px){body.toplevel_page_fourmix-intelligence-operations #fmi-operations{left:0}#fmi-page-header h1{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0)}#fmi-chat-page .fmi-chat__composer{width:calc(100% - 16px);margin-bottom:8px}}
+@media(prefers-color-scheme:dark){#fmi-page-header{background:#1d2327;color:#f0f0f1}#fmi-page-header .fmi-dock-context-menu > .fmi-staff-context{background:#1d2327;color:#f0f0f1}}
+#fmi-operations:has(#fmi-chat-page.fmi-chat-ready) > .fmi-chat-onboarding{display:none}
+.fmi-chat-onboarding{padding:20px 24px;background:#fff;color:#1d2327;flex:none}
+.fmi-chat-onboarding h2{margin:0 0 12px;font-size:22px;line-height:1.5}
+.fmi-chat-onboarding p{margin:0;line-height:1.8}
+#fmi-page-header{--fmi-dock-line:#dcdcde;--fmi-dock-link:#2271b1}
+#fmi-page-header h1{color:inherit}
+@media(prefers-color-scheme:dark){#fmi-page-header{--fmi-dock-line:#50575e;--fmi-dock-link:#72aee6}.fmi-chat-onboarding{background:#1d2327;color:#f0f0f1}}
+
+/* 専用相談画面では重複する入口を隠し、狭幅でも送信を遮りません。 */
+body.toplevel_page_fourmix-intelligence-operations:has(#fmi-chat-page.fmi-chat-ready) #fmi-dock-toggle{display:none}
+/* 浮動ヘッダーは閉じる操作を固定し、狭幅で操作群を外へ押し出しません。 */
+#fmi-dock-panel .fmi-dock-header > .fmi-chat__toolbar{flex:1 1 0%;width:0;min-width:0}
+#fmi-dock-panel .fmi-dock-header .fmi-chat__label{min-width:0}
+#fmi-dock-close{flex:none}
+@media(max-width:600px){#fmi-dock-panel .fmi-dock-header{padding-left:8px;padding-right:8px;gap:4px}#fmi-dock-panel .fmi-dock-header .fmi-chat__toolbar{gap:4px}#fmi-dock-panel .fmi-dock-header .fmi-chat__label{display:none}}

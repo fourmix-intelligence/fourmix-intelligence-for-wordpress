@@ -8,3 +8,19 @@
 @media(max-width:600px){.fmi-chat__controls .fmi-chat__button--primary{margin-left:auto}.fmi-block .fmi-chat__toolbar .fmi-chat__label{flex-basis:100%;min-width:0}.fmi-block .fmi-chat__toolbar .fmi-chat__button{flex:1}}
 
 @media(max-width:600px){.fmi-chat .fmi-chat__controls button.fmi-chat__button--primary{margin-left:auto}}
+
+/* 埋め込みも製品内チャットと同じ一行入力で閲覧領域を優先します。 */
+.fmi-chat .fmi-chat__composer{display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:8px;padding:8px 12px}
+.fmi-chat .fmi-chat__input-label{grid-column:2;grid-row:2;min-width:0;font-size:0}
+.fmi-chat textarea.fmi-chat__input{height:44px;min-height:44px;max-height:100px;padding:8px 10px;margin:0;font-size:14px}
+.fmi-chat .fmi-attachments{display:contents}
+.fmi-chat .fmi-attachments>button{grid-column:1;grid-row:2;font-size:0;width:36px;min-height:36px;padding:0}
+.fmi-chat .fmi-attachments>button::before{content:'＋';font-size:22px}
+.fmi-chat .fmi-attachments-list{grid-column:1/-1;grid-row:1;max-height:min(100px,15dvh)}
+.fmi-chat .fmi-attachments-status{grid-column:1/-1;grid-row:3;max-height:40px;overflow:auto;margin:0}
+.fmi-chat .fmi-chat__controls{grid-column:3;grid-row:2;flex-wrap:nowrap}
+.fmi-chat .fmi-chat__controls .fmi-chat__hint{display:none}
+.fmi-chat .fmi-chat__status{max-height:64px;overflow:auto}
+.fmi-chat .fmi-chat__status:empty{display:none}
+@media(max-width:400px){.fmi-chat .fmi-chat__composer{gap:6px;padding:8px}.fmi-chat .fmi-chat__controls{gap:4px}.fmi-chat .fmi-chat__controls button{padding:6px 8px}}
+.fmi-chat .fmi-chat__result-details .fmi-chat__arguments{max-height:min(16rem,35dvh);overflow:auto;overscroll-behavior:contain}

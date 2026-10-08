@@ -2,6 +2,7 @@
   'use strict';
   const __ = (text) => wp.i18n.__(text, 'fourmix-intelligence');
   const config = window.FourmixIntelligencePersonalSettings;
+  if (!config.loginConfigurationReady) return;
   const form = document.getElementById('fmi-connect'), select = document.getElementById('fmi-staff-agent');
   const status = document.getElementById('fmi-personal-status');
   async function request(action, body) {
