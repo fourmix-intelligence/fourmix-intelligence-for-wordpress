@@ -188,7 +188,7 @@ final class NativeIdentity {
 			if ( 401 === $code ) {
 				delete_transient( self::key() );
 			}
-			throw new \RuntimeException( 401 === $code ? esc_html__( 'Fourmix Intelligence に再度ログインしてください。', 'fourmix-intelligence' ) : ( 403 === $code ? esc_html__( 'このワークスペースの業務助手を利用できません。', 'fourmix-intelligence' ) : esc_html__( '本人の権限を確認できません。操作を再送せず、接続を確認してください。', 'fourmix-intelligence' ) ), (int) $code );
+			throw new \RuntimeException( 401 === $code ? esc_html__( 'Fourmix Intelligence に再度ログインしてください。', 'fourmix-intelligence' ) : ( 403 === $code ? esc_html__( 'このワークスペースの業務アシスタントを利用できません。', 'fourmix-intelligence' ) : esc_html__( '本人の権限を確認できません。操作を再送せず、接続を確認してください。', 'fourmix-intelligence' ) ), (int) $code );
 		}
 		$data = json_decode( wp_remote_retrieve_body( $reply ), true );
 		if ( ! is_array( $data ) ) {
