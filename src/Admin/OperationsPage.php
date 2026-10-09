@@ -40,7 +40,15 @@ final class OperationsPage {
 		?>
 		<div class="wrap" id="fmi-operations">
 			<header id="fmi-page-header" class="fmi-dock-header"><img src="<?php echo esc_url( FOURMIX_INTELLIGENCE_URL . 'assets/brand/fourmix-intelligence-icon.png' ); ?>" alt="" width="28" height="28"><h1><?php esc_html_e( 'Fourmix Intelligence', 'fourmix-intelligence' ); ?></h1></header>
-			<section class="fmi-chat-onboarding"><h2><?php esc_html_e( 'Fourmix Intelligence 運営支援', 'fourmix-intelligence' ); ?></h2><p><?php if ( \FourmixIntelligence\WordPress\Support\NativeIdentity::login_configuration_ready() ) : ?><?php esc_html_e( '業務についてAIに相談できます。操作が必要な場合は、内容を確認してから実行します。', 'fourmix-intelligence' ); ?><?php else : ?><?php esc_html_e( 'このサイトは未接続です。管理者が連携設定を済ませ、ワークスペースからこのサイトを登録してください。', 'fourmix-intelligence' ); ?><?php endif; ?> <a href="<?php echo esc_url( admin_url( 'admin.php?page=fourmix-intelligence-personal-settings' ) ); ?>"><?php esc_html_e( '社内向けAIの設定', 'fourmix-intelligence' ); ?></a></p></section>
+			<section class="fmi-chat-onboarding"><h2><?php esc_html_e( 'Fourmix Intelligence 運営支援', 'fourmix-intelligence' ); ?></h2><p>
+			<?php
+			if ( \FourmixIntelligence\WordPress\Support\NativeIdentity::login_configuration_ready() ) :
+				?>
+				<?php esc_html_e( '業務についてAIに相談できます。操作が必要な場合は、内容を確認してから実行します。', 'fourmix-intelligence' ); ?>
+				<?php
+else :
+	?>
+				<?php esc_html_e( 'このサイトは未接続です。管理者が連携設定を済ませ、ワークスペースからこのサイトを登録してください。', 'fourmix-intelligence' ); ?><?php endif; ?> <a href="<?php echo esc_url( admin_url( 'admin.php?page=fourmix-intelligence-personal-settings' ) ); ?>"><?php esc_html_e( '社内向けAIの設定', 'fourmix-intelligence' ); ?></a></p></section>
 			<div id="fmi-chat-page"><div id="fmi-chat"></div></div>
 		</div>
 		<?php

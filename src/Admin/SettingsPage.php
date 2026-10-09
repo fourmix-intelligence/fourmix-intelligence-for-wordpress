@@ -128,7 +128,7 @@ final class SettingsPage {
 		$post_types = get_post_types( array( 'public' => true ), 'objects' );
 		global $wpdb;
 		$sync_target = hash( 'sha256', rtrim( (string) Options::get( 'url', 'https://platform.ai.fourmix.co.jp/intelligence' ), '/' ) . "\n" . (string) Options::get( 'dataset' ) );
-		$held_sync = (int) $wpdb->get_var( $wpdb->prepare( 'SELECT COUNT(*) FROM %i WHERE target_hash <> %s', $wpdb->prefix . 'fourmix_intelligence_outbox', $sync_target ) ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery
+		$held_sync   = (int) $wpdb->get_var( $wpdb->prepare( 'SELECT COUNT(*) FROM %i WHERE target_hash <> %s', $wpdb->prefix . 'fourmix_intelligence_outbox', $sync_target ) ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery
 		?>
 		<div class="wrap"><h1 class="fmi-brand-heading"><img src="<?php echo esc_url( FOURMIX_INTELLIGENCE_URL . 'assets/brand/fourmix-intelligence-icon.png' ); ?>" alt="" width="36" height="36"><?php esc_html_e( 'Fourmix Intelligence 連携設定', 'fourmix-intelligence' ); ?></h1>
 		<p><?php esc_html_e( 'サイトの案内、AI接客、コンテンツ同期を一つの設定で管理します。秘密情報はブラウザーへ公開されません。', 'fourmix-intelligence' ); ?></p>

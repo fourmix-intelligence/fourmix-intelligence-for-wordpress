@@ -22,8 +22,8 @@ final class PersonalSettingsPage {
 			'fourmix-intelligence-personal-settings',
 			'FourmixIntelligencePersonalSettings',
 			array(
-				'endpoint' => rest_url( 'fourmix-intelligence/v1/staff/' ),
-				'nonce'    => wp_create_nonce( 'wp_rest' ),
+				'endpoint'                => rest_url( 'fourmix-intelligence/v1/staff/' ),
+				'nonce'                   => wp_create_nonce( 'wp_rest' ),
 				'loginConfigurationReady' => \FourmixIntelligence\WordPress\Support\NativeIdentity::login_configuration_ready(),
 			)
 		);
@@ -50,7 +50,7 @@ final class PersonalSettingsPage {
 				<?php else : ?>
 				<div class="fmi-connection-prerequisite">
 				<p class="description" role="status"><?php echo esc_html( \FourmixIntelligence\WordPress\Support\NativeIdentity::setup_message() ); ?></p>
-				<?php if ( current_user_can( 'manage_options' ) ) : ?>
+					<?php if ( current_user_can( 'manage_options' ) ) : ?>
 					<a class="button" href="<?php echo esc_url( \FourmixIntelligence\WordPress\Support\NativeIdentity::setup_settings_url() ); ?>"><?php echo esc_html( \FourmixIntelligence\WordPress\Support\NativeIdentity::setup_settings_label() ); ?></a>
 				<?php else : ?>
 					<p class="description"><?php echo esc_html( \FourmixIntelligence\WordPress\Support\NativeIdentity::setup_admin_message() ); ?></p>

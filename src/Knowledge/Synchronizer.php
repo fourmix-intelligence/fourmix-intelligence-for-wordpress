@@ -74,21 +74,27 @@ final class Synchronizer {
 	}
 	private function process_batch(): void {
 		global $wpdb;
-		$table = $wpdb->prefix . 'fourmix_intelligence_outbox';
+		$table       = $wpdb->prefix . 'fourmix_intelligence_outbox';
 		$receipt_key = 'fourmix_intelligence_sync_receipt';
-		$receipt = (array) get_option( $receipt_key, array() );
-		$dataset = (string) Options::get( 'dataset' );
-		$target = $this->target();
+		$receipt     = (array) get_option( $receipt_key, array() );
+		$dataset     = (string) Options::get( 'dataset' );
+		$target      = $this->target();
 		if ( $receipt && ( $receipt['target'] !== $target || (int) ( $receipt['retry_at'] ?? 0 ) > time() ) ) {
 			$this->schedule( 60 );
 			return;
 		}
-		$rows  = $receipt['rows'] ?? $wpdb->get_results( $wpdb->prepare( 'SELECT * FROM %i WHERE target_hash = %s AND available_at <= %s ORDER BY id ASC LIMIT 50', $table, $target, current_time( 'mysql', true ) ), ARRAY_A ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery
+		$rows = $receipt['rows'] ?? $wpdb->get_results( $wpdb->prepare( 'SELECT * FROM %i WHERE target_hash = %s AND available_at <= %s ORDER BY id ASC LIMIT 50', $table, $target, current_time( 'mysql', true ) ), ARRAY_A ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery
 		if ( ! $rows ) {
 			return;
 		}
 		if ( ! $receipt ) {
-			$receipt = array( 'target' => $target, 'rows' => $rows, 'records' => array_map( array( $this, 'record' ), $rows ), 'request_id' => wp_generate_uuid4(), 'job_id' => null );
+			$receipt = array(
+				'target'     => $target,
+				'rows'       => $rows,
+				'records'    => array_map( array( $this, 'record' ), $rows ),
+				'request_id' => wp_generate_uuid4(),
+				'job_id'     => null,
+			);
 			// 送信前に不変の本文と受付キーを保存し、通信結果不明でも同じ受付を確認する。
 			update_option( $receipt_key, $receipt, false );
 		}
@@ -108,7 +114,7 @@ final class Synchronizer {
 				return;
 			}
 			$result = $job['result'] ?? array();
-			if ( 'succeeded' !== ( $job['status'] ?? '' ) || ! isset( $result['received'], $result['failed'], $result['error_count'] ) || (int) $result['received'] !== count( $rows ) || (int) $result['failed'] > 0 || (int) $result['error_count'] > 0 ) {
+			if ( 'succeeded' !== ( $job['status'] ?? '' ) || ! isset( $result['received'], $result['failed'], $result['error_count'] ) || count( $rows ) !== (int) $result['received'] || 0 < (int) $result['failed'] || 0 < (int) $result['error_count'] ) {
 				if ( in_array( $job['status'] ?? '', array( 'succeeded', 'failed' ), true ) ) {
 					// 確定した失敗だけ新しい受付で再試行できる。未確定の受付は維持する。
 					delete_option( $receipt_key );
@@ -136,7 +142,7 @@ final class Synchronizer {
 					array( 'id' => (int) $row['id'] ),
 					array( '%d', '%s' ),
 					array( '%d' )
-					); }
+				); }
 			if ( $receipt ) {
 				$receipt['retry_at'] = time() + $next_delay;
 				update_option( $receipt_key, $receipt, false );
@@ -146,9 +152,9 @@ final class Synchronizer {
 	}
 	private function schedule( int $delay ): void {
 		// 周期確認とは引数を分け、既存の5分周期に短い再確認を妨げさせない。
-		$args = array( 'pending_batch' );
+		$args    = array( 'pending_batch' );
 		$desired = time() + max( 1, $delay );
-		$next = wp_next_scheduled( 'fourmix_intelligence_process_sync', $args );
+		$next    = wp_next_scheduled( 'fourmix_intelligence_process_sync', $args );
 		if ( ! $next || $next > $desired ) {
 			if ( $next ) {
 				wp_unschedule_event( $next, 'fourmix_intelligence_process_sync', $args );
