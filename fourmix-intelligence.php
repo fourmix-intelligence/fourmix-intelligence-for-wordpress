@@ -3,7 +3,7 @@
  * Plugin Name:       Fourmix Intelligence AI
  * Plugin URI:        https://github.com/fourmix-intelligence/fourmix-intelligence-for-wordpress
  * Description:       Fourmix Intelligence の AI 接客、サイト内案内、資料同期を WordPress と WooCommerce に統合します。
- * Version:           2.0.0
+ * Version:           2.1.0
  * Requires at least: 6.7
  * Requires PHP:      8.1
  * Author:            Fourmix Co., Ltd.
@@ -15,7 +15,7 @@
 
 defined( 'ABSPATH' ) || exit;
 
-define( 'FOURMIX_INTELLIGENCE_VERSION', '2.0.0' );
+define( 'FOURMIX_INTELLIGENCE_VERSION', '2.1.0' );
 define( 'FOURMIX_INTELLIGENCE_FILE', __FILE__ );
 define( 'FOURMIX_INTELLIGENCE_DIR', plugin_dir_path( __FILE__ ) );
 define( 'FOURMIX_INTELLIGENCE_URL', plugin_dir_url( __FILE__ ) );
