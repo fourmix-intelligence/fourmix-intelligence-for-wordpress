@@ -162,6 +162,11 @@
         item.follow_up_questions.slice(0, 5).forEach((item) => { const prompt = typeof item === 'string' ? item : item.prompt; if (!prompt) return; const choice = button(prompt); choice.addEventListener('click', () => { if (!busy && !state.pending) { input.value = prompt; input.focus(); } }); questions.append(choice); }); article.append(questions);
       }
       if (options.decorate && item.data) options.decorate(body, item.data);
+      if (options.tools && item.role === 'assistant' && !item.streaming) window.FourmixBusinessResults?.render(body, item.data, ({view, row}) => {
+        if (busy || state.pending || state.active_run) return;
+        const id = row.id ?? row.identify ?? row.key ?? row.$id?.value ?? row.post_id ?? row.order_id ?? row.product_id;
+        input.value = view.title + __('について相談します。') + (id ? '\n' + __('対象ID：') + id : ''); input.focus();
+      });
       if (options.tools) {
         const cards = new Map();
         (item.actions || []).forEach((id) => { const card = tool(body, id); cards.set(id, () => { card.scrollIntoView({block: 'nearest'}); card.tabIndex = -1; card.focus(); }); });
