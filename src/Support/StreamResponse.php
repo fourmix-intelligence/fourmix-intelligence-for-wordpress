@@ -40,7 +40,11 @@ final class StreamResponse {
 				ob_end_flush();
 			}
 			$emit  = static function ( array $event ): void {
-				echo wp_json_encode( self::clean( $event ) ) . "\n"; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- NDJSONとしてJSON符号化し、HTMLでは返しません。
+				if ( 'run.keepalive' === ( $event['type'] ?? '' ) ) {
+					echo "\n";
+				} else {
+					echo wp_json_encode( self::clean( $event ) ) . "\n"; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- NDJSONとしてJSON符号化し、HTMLでは返しません。
+				}
 				flush();
 			};
 			$reply = $run( $emit );

@@ -127,7 +127,7 @@ final class ConversationController {
 				function () use ( $body, $scope, $emit ) {
 					$path        = '/api/v3/ai/plugins/' . Options::public_agent() . '/runs';
 					$public_emit = $emit ? static function ( $event ) use ( $emit ) {
-						if ( in_array( $event['type'] ?? '', array( 'run.created', 'assistant.delta', 'assistant.message', 'run.status', 'status' ), true ) ) {
+						if ( in_array( $event['type'] ?? '', array( 'run.created', 'assistant.delta', 'assistant.message', 'run.status', 'status', 'run.keepalive' ), true ) ) {
 							$emit( $event );
 						}
 					} : null;

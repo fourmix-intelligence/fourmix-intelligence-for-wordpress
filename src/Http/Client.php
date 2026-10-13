@@ -82,6 +82,12 @@ final class Client {
 				$line   = trim( substr( $buffer, 0, $end ) );
 				$buffer = substr( $buffer, $end + 1 );
 				if ( '' === $line ) {
+					$emit(
+						array(
+							'type' => 'run.keepalive',
+							'data' => array(),
+						)
+					);
 					continue;
 				}
 				$event = json_decode( $line, true );
