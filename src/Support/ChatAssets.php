@@ -41,7 +41,8 @@ final class ChatAssets {
 		$chat_version = FOURMIX_INTELLIGENCE_VERSION . '-' . substr( hash_file( 'sha256', FOURMIX_INTELLIGENCE_DIR . 'assets/chat.js' ), 0, 12 );
 		wp_register_script( 'fourmix-intelligence-business-results', FOURMIX_INTELLIGENCE_URL . 'assets/business-results.js', array( 'wp-i18n' ), self::version( 'assets/business-results.js' ), true );
 		wp_set_script_translations( 'fourmix-intelligence-business-results', 'fourmix-intelligence' );
-		wp_register_script( 'fourmix-intelligence-chat', FOURMIX_INTELLIGENCE_URL . 'assets/chat.js', array( 'fourmix-intelligence-answer', 'fourmix-intelligence-attachments', 'fourmix-intelligence-artifacts', 'fourmix-intelligence-business-results' ), $chat_version, true );
+		wp_register_script( 'fourmix-intelligence-answer-reading', FOURMIX_INTELLIGENCE_URL . 'assets/answer-reading.js', array(), self::version( 'assets/answer-reading.js' ), true );
+		wp_register_script( 'fourmix-intelligence-chat', FOURMIX_INTELLIGENCE_URL . 'assets/chat.js', array( 'fourmix-intelligence-answer-reading', 'fourmix-intelligence-answer', 'fourmix-intelligence-attachments', 'fourmix-intelligence-artifacts', 'fourmix-intelligence-business-results' ), $chat_version, true );
 		wp_set_script_translations( 'fourmix-intelligence-chat', 'fourmix-intelligence' );
 		wp_register_style( 'fourmix-intelligence-chat', FOURMIX_INTELLIGENCE_URL . 'assets/chat.css', array(), self::version( 'assets/chat.css' ) );
 		wp_register_style( 'fourmix-intelligence-answer', FOURMIX_INTELLIGENCE_URL . 'assets/answer.css', array( 'fourmix-intelligence-chat' ), self::version( 'assets/answer.css' ) );

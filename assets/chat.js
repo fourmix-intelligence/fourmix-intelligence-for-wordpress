@@ -46,6 +46,7 @@
     const stop = button(options.cancel ? __('停止') : __('受信を停止')); stop.hidden = true;
     const send = button(__('送信')); send.type = 'submit'; send.classList.add('fmi-chat__button--primary'); controls.append(hint, stop, send); form.append(label, controls);
     host.append(toolbar, log, status, recover, form);
+    const reader = window.FourmixIntelligenceAnswerReader?.create(log);
     if (options.preserveDraft) {
       input.value = state.draft || '';
       input.addEventListener('input', () => { state.draft = input.value; save(); });
@@ -57,7 +58,7 @@
     if (attachments) input.required = false;
     function say(text) { status.textContent = text; }
     function activity(value) { busy = value; send.disabled = value || !!state.pending || !!state.active_run || !!attachments?.hasBlocking(); input.disabled = value; fresh.disabled = value; history.disabled = value; stop.hidden = !value; attachments?.setBusy(value); host.setAttribute('aria-busy', String(value)); }
-    function scroll() { log.scrollTop = log.scrollHeight; }
+    function scroll(position) { const item = state.messages.at(-1); if (item?.role === 'assistant') reader?.update(messageNodes.get(item), position); else if (Number.isFinite(position)) log.scrollTop = position; }
     function tool(target, id) {
       const card = node('section', 'fmi-chat__tool'); card.dataset.actionId = id;
       card.append(node('h3', '', __('操作内容の確認')));
@@ -84,7 +85,6 @@
       }
       const markUnknown = () => { uncertain = true; state.actionUnknown = [...new Set([...(state.actionUnknown || []), id])]; save(); };
       function render(data) {
-        const atEnd = log.scrollHeight - log.scrollTop - log.clientHeight < 80;
         formal = {...formal, ...data};
         lastStatus = data.status;
         // 正本が未実行の確認待ちを返した場合は、失われた認証応答によるローカル保留を解除できる。
@@ -106,7 +106,7 @@
           detail.append(node('summary', '', __('操作結果の詳細')));
           const raw = node('pre', 'fmi-chat__arguments'); raw.tabIndex = 0; raw.setAttribute('aria-label', __('操作結果の詳細')); raw.textContent = JSON.stringify(data.result, null, 2); detail.append(raw); info.append(detail);
         }
-        if (atEnd) scroll();
+        scroll();
       }
       const load = async () => { if (processing || disposed) return; processing = true; refresh.disabled = true; approve.disabled = true; try { render(await options.request('action', {id, thread_id: state.thread_id})); } catch (error) { lastStatus = ''; result.textContent = error.message; refresh.hidden = false; } finally { processing = false; refresh.disabled = false; approve.disabled = uncertain || !permitted || lastStatus !== 'confirmation_required'; reject.disabled = uncertain || !permitted || lastStatus !== 'confirmation_required'; } };
       reject.addEventListener('click', async () => {
@@ -172,7 +172,7 @@
         (item.actions || []).forEach((id) => { const card = tool(body, id); cards.set(id, () => { card.scrollIntoView({block: 'nearest'}); card.tabIndex = -1; card.focus(); }); });
         if (item.role === 'assistant' && !item.streaming) window.FourmixIntelligenceAnswer?.bindActionLinks?.(body, cards);
       }
-      messageNodes.set(item, article); log.append(article);
+      article.dataset.answerRole = item.role; messageNodes.set(item, article); log.append(article);
     }
     function historyRunNotice(run) {
       if (run?.status !== 'failed' || run.finalized === false) return '';
@@ -202,18 +202,18 @@
             const data = await options.history(conversation, before);
             if (!current()) return;
             state.messages = (data.messages || []).filter((item) => ['user', 'assistant'].includes(item.role)).map((item) => ({...item, actions: actionIds(item.data)})).concat(state.messages);
-            state.before_id = data.before_id; state.has_more = data.has_more; visibleCount += 50; save(); follow = false; redraw();
+            state.before_id = data.before_id; state.has_more = data.has_more; visibleCount += 50; save(); reader?.hold(); const height = log.scrollHeight; redraw(); log.scrollTop += log.scrollHeight - height;
           } catch (error) { if (current()) { say(error.message); previous.disabled = false; } }
         }); log.append(previous);
       }
-      if (state.messages.length > visibleCount) { const older = button(__('以前のメッセージを表示')); older.addEventListener('click', () => { const height = log.scrollHeight; follow = false; visibleCount += 40; redraw(); log.scrollTop += log.scrollHeight - height; }); log.append(older); }
+      if (state.messages.length > visibleCount) { const older = button(__('以前のメッセージを表示')); older.addEventListener('click', () => { const height = log.scrollHeight; reader?.hold(); visibleCount += 40; redraw(); log.scrollTop += log.scrollHeight - height; }); log.append(older); }
       rememberTerminalRun(state.latest_run);
-      visible.forEach(message); const notice = historyRunNotice(state.latest_run); if (notice && !state.messages.some((item) => item.run_id === state.latest_run?.run_id && item.run_state?.status === 'failed')) log.append(node('p', 'fmi-chat__terminal-status', notice)); if (follow) scroll(); else log.scrollTop = position;
+      visible.forEach(message); const notice = historyRunNotice(state.latest_run); if (notice && !state.messages.some((item) => item.run_id === state.latest_run?.run_id && item.run_state?.status === 'failed')) log.append(node('p', 'fmi-chat__terminal-status', notice)); scroll(position);
     }
     function renderPartial() {
       const item = state.messages.at(-1); if (!item?.streaming) return;
       if (!messageNodes.has(item)) redraw();
-      else { const body = messageNodes.get(item).querySelector('.fmi-chat__content'); window.FourmixIntelligenceAnswer.render(body, item.content, true); if (follow) scroll(); }
+      else { const body = messageNodes.get(item).querySelector('.fmi-chat__content'); window.FourmixIntelligenceAnswer.render(body, item.content, true); scroll(); }
     }
     function finish(payload) {
       clearTimeout(renderTimer); renderTimer = null;
@@ -222,7 +222,7 @@
       const answer = payload.result?.answer || payload.answer || __('応答を受け取りました。内容をご確認ください。');
       const partial = state.messages.at(-1); const message = {role: 'assistant', content: answer, data: payload.result?.data, artifacts: payload.result?.data?.artifacts || payload.data?.artifacts, follow_up_questions: payload.result?.follow_up_questions, actions: options.tools ? actionIds(payload) : []};
       if (partial?.role === 'assistant' && partial.streaming) state.messages[state.messages.length - 1] = message; else state.messages.push(message);
-      state.latest_run = null; state.pending = null; state.cancel_requested = false; save(); recover.hidden = true; retry.hidden = true; redraw(); say(__('応答を受け取りました。')); activity(false); if (input.getClientRects().length) input.focus();
+      state.latest_run = null; state.pending = null; state.cancel_requested = false; save(); recover.hidden = true; retry.hidden = true; redraw(); say(__('応答を受け取りました。')); activity(false); if (input.getClientRects().length) input.focus({preventScroll: true});
     }
     function unknown() { clearTimeout(renderTimer); renderTimer = null; renderPartial(); save(); recover.hidden = false; retry.hidden = true; say(__('受信を完了できませんでした。処理が続いている可能性があります。再送せず、送信結果を確認してください。')); activity(false); }
     async function transmit() {
@@ -251,7 +251,7 @@
       const files = attachments?.consume() || [], text = input.value.trim() || __('添付したファイルについて確認してください。');
       state.pending = {...extra, message: text, attachment_ids: files.map((item) => item.id), request_id: Date.now() + ':' + crypto.randomUUID(), thread_id: state.thread_id, conversation_id: state.conversation_id};
       state.run_id = ''; state.cancel_requested = false;
-      rememberTerminalRun(state.latest_run); state.latest_run = null; state.messages.push({role: 'user', content: text, attachments: files, context: options.contextLabel ? options.contextLabel(extra) : ''}); input.value = ''; state.draft = ''; follow = true; save(); redraw(); transmit();
+      rememberTerminalRun(state.latest_run); state.latest_run = null; state.messages.push({role: 'user', content: text, attachments: files, context: options.contextLabel ? options.contextLabel(extra) : ''}); input.value = ''; state.draft = ''; reader?.begin(); save(); redraw(); transmit();
     });
     input.addEventListener('keydown', (event) => { if (event.key === 'Enter' && (event.ctrlKey || event.metaKey) && !event.isComposing) { event.preventDefault(); form.requestSubmit(); } });
     function cancelled(message, wasCancelled = true) {
@@ -294,7 +294,7 @@
       if (busy) return;
       if ((state.messages.length || state.pending) && !window.confirm(__('新しい相談を始めますか？ 前の処理や確認待ちの操作は取り消されません。'))) return;
       fresh.disabled = true;
-      try { await attachments?.reset(); artifacts?.abort(); const data = options.newConversation ? await options.newConversation() : {}; state = {messages: [], pending: null, conversation_id: '', thread_id: data.thread_id || '', ...(options.preserveDraft ? {draft: input.value} : {})}; visibleCount = 40; save(); recover.hidden = true; redraw(); activity(false); say(__('新しい相談を始められます。')); input.focus(); } catch (error) { say(error.message); } finally { fresh.disabled = false; }
+      try { await attachments?.reset(); artifacts?.abort(); const data = options.newConversation ? await options.newConversation() : {}; state = {messages: [], pending: null, conversation_id: '', thread_id: data.thread_id || '', ...(options.preserveDraft ? {draft: input.value} : {})}; visibleCount = 40; reader?.begin(); save(); recover.hidden = true; redraw(); activity(false); say(__('新しい相談を始められます。')); input.focus(); } catch (error) { say(error.message); } finally { fresh.disabled = false; }
     });
     history.addEventListener('click', async () => {
       if (options.conversations && !busy && !state.pending) {
@@ -317,7 +317,7 @@
                 const restored = await options.history(row.identify);
                 if (disposed || turn !== generation) return;
                 state = {messages: (restored.messages || []).filter((item) => ['user', 'assistant'].includes(item.role)).map((item) => ({...item, actions: actionIds(item.data)})), conversation_id: row.identify, thread_id: restored.thread_id || state.thread_id, pending: null, active_run: restored.active_run, latest_run: restored.latest_run, before_id: restored.before_id, has_more: restored.has_more};
-                save(); redraw(); activity(false); say(restored.active_run ? __('この相談は処理中です。結果を確認してから続けてください。') : __('相談履歴を読み込みました。'));
+                reader?.begin(); save(); redraw(); activity(false); say(restored.active_run ? __('この相談は処理中です。結果を確認してから続けてください。') : __('相談履歴を読み込みました。'));
               } catch (error) { say(error.message); choices.querySelectorAll('button').forEach((item) => { item.disabled = false; }); }
               finally { if (!disposed && turn === generation) activity(false); }
             });
@@ -374,14 +374,12 @@
         if (current()) say(__('会話の処理状態を同期できませんでした。本文は保持しています。相談履歴から再確認してください。'));
       } finally { if (!disposed && turn === generation) activity(false); }
     }
-    let follow = true;
-    log.addEventListener('scroll', () => { follow = log.scrollHeight - log.scrollTop - log.clientHeight < 80; });
-    const resize = () => { const end = follow; if (end) requestAnimationFrame(scroll); };
+    const resize = () => scroll();
     window.addEventListener('resize', resize);
     window.addEventListener('pagehide', leave);
     window.addEventListener('pageshow', resume);
     redraw(); activity(false); if (state.pending) unknown(); else hydrateLegacyTurns();
-    return {dispose() { disposed = true; ++generation; controller?.abort(); attachments?.dispose(); artifacts?.abort(); clearTimeout(renderTimer); messageNodes.clear(); save(); window.removeEventListener('pagehide', leave); window.removeEventListener('pageshow', resume); window.removeEventListener('resize', resize); }, input};
+    return {dispose() { reader?.dispose(); disposed = true; ++generation; controller?.abort(); attachments?.dispose(); artifacts?.abort(); clearTimeout(renderTimer); messageNodes.clear(); save(); window.removeEventListener('pagehide', leave); window.removeEventListener('pageshow', resume); window.removeEventListener('resize', resize); }, input};
   }
   async function stream(endpoint, init, signal, onEvent) {
     const reply = await fetch(endpoint, {...init, signal});

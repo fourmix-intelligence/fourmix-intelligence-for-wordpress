@@ -4,7 +4,7 @@ Tags: ai, agent, woocommerce, search, customer-support
 Requires at least: 6.7
 Tested up to: 7.1
 Requires PHP: 8.1
-Stable tag: 2.2.1
+Stable tag: 2.2.2
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -55,6 +55,9 @@ No. Frequently changing inventory is not stored in the knowledge index. WordPres
 No. WordPress communicates with Fourmix Intelligence on the server. For stricter management, credentials can be defined as constants in wp-config.php.
 
 == Changelog ==
+
+= 2.2.2 =
+新しい回答の先頭を一度表示し、生成中・完了時の末尾への移動を修正しました。手動の閲覧位置と履歴の追加読み込みを保持します。
 
 = 2.2.1 =
 Forward idle heartbeats in staff and public chat streams without changing execution status or retrying business requests.
